@@ -55,6 +55,14 @@ void VstSequencer::init(ParamsMapping&& mapping, bool useDynamicEvents)
     updateMainStreamEvents(m_playbackData.originEvents, m_playbackData.dynamics);
 }
 
+void VstSequencer::setKeyswitchMap(const KeyswitchMap* map)
+{
+    m_keyswitchMap = map;
+    m_hasLastKeyswitch = false;
+
+    updateMainStreamEvents(m_playbackData.originEvents, m_playbackData.dynamics);
+}
+
 void VstSequencer::updateMainStreamEvents(const mpe::PlaybackEventsMap& events, const mpe::DynamicAutomationLayers& dynamics)
 {
     if (!m_inited) {
@@ -62,6 +70,7 @@ void VstSequencer::updateMainStreamEvents(const mpe::PlaybackEventsMap& events, 
     }
 
     m_mainStreamEvents.clear();
+    m_hasLastKeyswitch = false;
 
     if (m_onMainStreamFlushed) {
         m_onMainStreamFlushed();
@@ -167,6 +176,8 @@ void VstSequencer::addNoteEvent(EventSequenceMap& destination, const mpe::NoteEv
     const float velocityFraction = noteVelocityFraction(noteEvent);
     const float tuning = noteTuning(noteEvent, noteId);
 
+    addKeyswitchEvent(destination, noteEvent);
+
     if (arrangementCtx.hasStart()) {
         if (m_useDynamicEvents) {
             destination[arrangementCtx.actualTimestamp].emplace_back(expressionLevel(noteEvent.expressionCtx().nominalDynamicLevel));
@@ -203,6 +214,49 @@ void VstSequencer::addNoteEvent(EventSequenceMap& destination, const mpe::NoteEv
             continue;
         }
     }
+}
+
+void VstSequencer::addKeyswitchEvent(EventSequenceMap& destination, const mpe::NoteEvent& noteEvent)
+{
+    if (!m_keyswitchMap) {
+        return;
+    }
+
+    const mpe::ArrangementContext& arrangementCtx = noteEvent.arrangementCtx();
+    if (!arrangementCtx.hasStart()) {
+        return;
+    }
+
+    const KeyswitchNote* keyswitch = m_keyswitchMap->keyswitchForNote(noteEvent.expressionCtx().articulations);
+    if (!keyswitch) {
+        return;
+    }
+
+    const bool unchanged = m_hasLastKeyswitch
+                           && m_lastKeyswitch.pitch == keyswitch->pitch
+                           && m_lastKeyswitch.velocity == keyswitch->velocity;
+
+    if (unchanged && !m_keyswitchMap->writeEveryNote) {
+        return;
+    }
+
+    const mpe::timestamp_t noteOnTime = arrangementCtx.actualTimestamp;
+    const int64_t leadUs = static_cast<int64_t>(std::max(0, m_keyswitchMap->leadMs)) * 1000;
+
+    mpe::timestamp_t ksOnTime = noteOnTime;
+    if (leadUs < static_cast<int64_t>(noteOnTime)) {
+        ksOnTime -= leadUs;
+    } else {
+        ksOnTime = mpe::timestamp_t(0);
+    }
+
+    const float velocityFraction = std::clamp(keyswitch->velocity / 127.f, 0.f, 1.f);
+
+    destination[ksOnTime].emplace_back(buildEvent(VstEvent::kNoteOnEvent, keyswitch->pitch, velocityFraction, 0.f));
+    destination[noteOnTime].emplace_back(buildEvent(VstEvent::kNoteOffEvent, keyswitch->pitch, velocityFraction, 0.f));
+
+    m_lastKeyswitch = *keyswitch;
+    m_hasLastKeyswitch = true;
 }
 
 void VstSequencer::addPedalEvent(EventSequenceMap& destination, const mpe::ArticulationMeta& meta)
