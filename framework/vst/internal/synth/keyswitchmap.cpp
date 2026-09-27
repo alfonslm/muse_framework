@@ -36,7 +36,8 @@ using namespace muse::mpe;
 
 namespace muse::vst {
 namespace {
-#define AT_NAME(x) { #x, ArticulationType::x }
+#define AT_NAME(x) { #x, ArticulationType::x \
+}
 
 //! NOTE Canonical map keys: the exact ArticulationType identifier name.
 const std::unordered_map<std::string, ArticulationType> CANONICAL_NAMES {
