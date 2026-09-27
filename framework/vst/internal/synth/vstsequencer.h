@@ -24,6 +24,7 @@
 
 #include "audio/engine/internal/abstracteventsequencer.h"
 
+#include "keyswitchmap.h"
 #include "vsttypes.h"
 
 namespace muse::vst {
@@ -31,6 +32,8 @@ class VstSequencer : public audio::engine::AbstractEventSequencer<VstEvent, Para
 {
 public:
     void init(ParamsMapping&& mapping, bool useDynamicEvents);
+
+    void setKeyswitchMap(const KeyswitchMap* map);
 
     muse::audio::gain_t currentGain() const;
 
@@ -43,6 +46,7 @@ private:
     void addPlaybackEvents(EventSequenceMap& destination, const mpe::PlaybackEventsMap& events);
     void addDynamicEvents(EventSequenceMap& destination, const mpe::DynamicAutomationLayers& layers);
     void addNoteEvent(EventSequenceMap& destination, const mpe::NoteEvent& noteEvent, SostenutoTimeAndDurations& sostenutoTimeAndDurations);
+    void addKeyswitchEvent(EventSequenceMap& destination, const mpe::NoteEvent& noteEvent);
     void addPedalEvent(EventSequenceMap& destination, const mpe::ArticulationMeta& meta);
     void addControlChangeEvent(EventSequenceMap& destination, const mpe::timestamp_t timestamp, const mpe::ControllerChangeEvent& event);
     void addParamChange(EventSequenceMap& destination, const mpe::timestamp_t timestamp, const ControlIdx controlIdx,
@@ -64,5 +68,9 @@ private:
     bool m_inited = false;
     bool m_useDynamicEvents = false;
     ParamsMapping m_mapping;
+
+    const KeyswitchMap* m_keyswitchMap = nullptr;
+    bool m_hasLastKeyswitch = false;
+    KeyswitchNote m_lastKeyswitch;
 };
 }
