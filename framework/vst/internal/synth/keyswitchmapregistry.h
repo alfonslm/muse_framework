@@ -31,10 +31,9 @@
 #include "keyswitchmap.h"
 
 namespace muse::vst {
-//! NOTE Loads *.json keyswitch maps from Documents/MuseScore4/Keyswitch Maps (no UI yet --
-//! see KEYSWITCH-INSTRUCTIONS.md Step 2/4). Any JSON file in that folder without a top-level
-//! "keyswitches" key is silently skipped, so a hand-written test track-map-assignments.json
-//! can live alongside the actual maps.
+//! NOTE Loads *.json keyswitch maps from Documents/MuseScore4/Keyswitch Maps. Any JSON file in
+//! that folder without a top-level "keyswitches" key is silently skipped, so a hand-written
+//! test track-map-assignments.json can live alongside the actual maps.
 class KeyswitchMapRegistry
 {
 public:
@@ -42,6 +41,11 @@ public:
 
     const KeyswitchMap* mapById(const std::string& id);
     void reload();
+
+    //! NOTE Called once at app startup (VSTModule::onInit) so the folder exists and has a
+    //! starting point in it before the user ever needs to go looking for it. Never overwrites
+    //! a file already there under the same name.
+    void ensureDefaultMapExists();
 
 private:
     KeyswitchMapRegistry() = default;

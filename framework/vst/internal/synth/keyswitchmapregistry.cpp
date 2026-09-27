@@ -106,4 +106,25 @@ const KeyswitchMap* KeyswitchMapRegistry::mapById(const std::string& id)
     auto it = m_mapsById.find(id);
     return it != m_mapsById.cend() ? &it->second : nullptr;
 }
+
+void KeyswitchMapRegistry::ensureDefaultMapExists()
+{
+    static const path_t RESOURCE_PATH(":/vst/resources/keyswitch/Default Example.json");
+
+    const path_t dir = mapsDirPath();
+    fileSystem()->makePath(dir);
+
+    const path_t destPath = dir + "/Default Example.json";
+    if (fileSystem()->exists(destPath)) {
+        return;
+    }
+
+    RetVal<ByteArray> content = fileSystem()->readFile(RESOURCE_PATH);
+    if (!content.ret) {
+        LOGW() << "Unable to read bundled default keyswitch map: " << content.ret.toString();
+        return;
+    }
+
+    fileSystem()->writeFile(destPath, content.val);
+}
 }
