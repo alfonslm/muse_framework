@@ -121,6 +121,8 @@ Ret ParallelSoundTrackWriter::write()
     const size_t workerCount = std::min(m_auxChannelsPerWorker.size(), m_jobs.size());
     LOGI() << "Exporting " << m_jobs.size() << " files on " << workerCount << " threads";
 
+    const auto startTime = std::chrono::steady_clock::now();
+
     std::vector<std::thread> workers;
     workers.reserve(workerCount);
     for (size_t i = 0; i < workerCount; ++i) {
@@ -166,6 +168,9 @@ Ret ParallelSoundTrackWriter::write()
         worker.join();
     }
 
+    const auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count();
+    LOGI() << "Rendered " << m_jobs.size() << " files in " << totalMs << " ms";
+
     if (m_isAborted) {
         m_isAborted = false;
         return make_ret(Ret::Code::Cancel);
@@ -202,9 +207,22 @@ void ParallelSoundTrackWriter::workerLoop(size_t workerIdx)
             break;
         }
 
-        if (!renderJob(*m_jobs.at(jobIdx), auxChannels)) {
+        const auto jobStart = std::chrono::steady_clock::now();
+
+        EncodedJob& encodedJob = *m_jobs.at(jobIdx);
+        if (!renderJob(encodedJob, auxChannels)) {
             m_hasEncodeError = true;
         }
+
+        //! NOTE Per-file timing, to see which files (tracks) dominate the export time
+        std::string trackNames;
+        for (const TrackChainPtr& track : encodedJob.job.tracks) {
+            trackNames += (trackNames.empty() ? "" : ", ") + track->trackName();
+        }
+
+        const auto jobMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - jobStart).count();
+        LOGI() << "Rendered file " << (jobIdx + 1) << "/" << m_jobs.size() << " [" << trackNames << "] in " << jobMs
+               << " ms on worker " << workerIdx;
     }
 }
 
