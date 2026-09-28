@@ -158,10 +158,6 @@ void Mixer::process(float* outBuffer, samples_t samplesPerChannel)
             continue;
         }
 
-        if (m_trackStemCallback) {
-            m_trackStemCallback(t.trackId, t.buffer.data(), samplesPerChannel);
-        }
-
         //! NOTE If the signal is silent, do not write to the output buffer
         //! or the aux buffers
         if (isChainSilent(t.chain)) {
@@ -227,12 +223,6 @@ void Mixer::processTrackChannels(size_t outBufferSize,
 void Mixer::setNonMutedTrackCount(size_t count)
 {
     m_nonMutedTrackCount = count;
-}
-
-void Mixer::setTrackStemCallback(TrackStemCallback callback)
-{
-    ONLY_AUDIO_ENGINE_THREAD;
-    m_trackStemCallback = std::move(callback);
 }
 
 bool Mixer::useMultithreading() const

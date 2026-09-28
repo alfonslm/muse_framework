@@ -25,6 +25,7 @@
 #include "nodes/audionode.h"
 
 #include "global/async/asyncable.h"
+#include "global/timer.h"
 
 #include "modularity/ioc.h"
 #include "iaudiofactory.h"
@@ -177,6 +178,21 @@ private:
     size_t tracksBeingProcessedCount() const;
     Ret doSaveSoundTrack(io::IODevice& dstDevice, const SoundTrackFormat& format);
     Ret doSaveSoundTracks(const SoundTrackTargetList& targets, const SoundTrackFormat& format);
+
+    // Parallel (multi-file) export
+    Ret validateSoundTrackTargets(const SoundTrackTargetList& targets) const;
+    size_t exportWorkerCount(const SoundTrackTargetList& targets) const;
+    std::vector<const Track*> auxTracks() const;
+    void prepareExportAuxCopies(const SoundTrackTargetList& targets, size_t workerCount, std::function<void(const Ret&)> completed);
+    void releaseExportAuxCopies();
+
+    struct ExportAuxCopy {
+        TrackId copyId = INVALID_TRACK_ID;
+        AudioFxChain fxChain;
+    };
+    std::vector<std::vector<TrackChainPtr> > m_exportAuxChannels; // [worker][aux index], null = not needed
+    std::vector<ExportAuxCopy> m_exportAuxCopies;
+    std::shared_ptr<Timer> m_exportAuxCopiesTimer;
 
     AudioCtxId m_ctxId = 0;
     IExecOperation* m_execOperation = nullptr;

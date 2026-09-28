@@ -172,10 +172,11 @@ struct SoundTrackFormat {
     }
 };
 
-//! NOTE One destination file for a single-instrument/single-track "stem" export, i.e. exporting
-//! more than one audio file (typically one per instrument/part) from a single render pass.
+//! NOTE One destination file of a multi-file export (typically one file per part). The file gets
+//! the mix of its own tracks run through its own copy of the aux and master buses, i.e. the same
+//! result as exporting it on its own with every other track muted.
 struct SoundTrackTarget {
-    TrackId trackId = -1;
+    TrackIdList trackIds;
     io::IODevice* dstDevice = nullptr;
 };
 

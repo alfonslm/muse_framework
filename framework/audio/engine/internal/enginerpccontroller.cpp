@@ -771,18 +771,29 @@ void EngineRpcController::init()
             ONLY_AUDIO_RPC_THREAD;
             SoundTrackFormat format;
             std::vector<TrackId> trackIds;
+            std::vector<uint64_t> trackCounts;
             std::vector<uint64_t> dstDevicePtrs;
-            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, format, trackIds, dstDevicePtrs)) {
+            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, format, trackIds, trackCounts, dstDevicePtrs)) {
                 return make_response_ret(msg, make_ret(Err::InvalidRpcData));
             }
-            IF_ASSERT_FAILED(trackIds.size() == dstDevicePtrs.size()) {
+            IF_ASSERT_FAILED(trackCounts.size() == dstDevicePtrs.size()) {
                 return make_response_ret(msg, make_ret(Err::InvalidRpcData));
             }
 
             SoundTrackTargetList targets;
-            targets.reserve(trackIds.size());
-            for (size_t i = 0; i < trackIds.size(); ++i) {
-                targets.push_back({ trackIds.at(i), reinterpret_cast<io::IODevice*>(dstDevicePtrs.at(i)) });
+            targets.reserve(dstDevicePtrs.size());
+            size_t offset = 0;
+            for (size_t i = 0; i < dstDevicePtrs.size(); ++i) {
+                const size_t count = static_cast<size_t>(trackCounts.at(i));
+                IF_ASSERT_FAILED(offset + count <= trackIds.size()) {
+                    return make_response_ret(msg, make_ret(Err::InvalidRpcData));
+                }
+
+                SoundTrackTarget target;
+                target.trackIds.assign(trackIds.cbegin() + offset, trackIds.cbegin() + offset + count);
+                target.dstDevice = reinterpret_cast<io::IODevice*>(dstDevicePtrs.at(i));
+                targets.push_back(std::move(target));
+                offset += count;
             }
 
             if (auto actx = audioContext(msg.ctxId)) {

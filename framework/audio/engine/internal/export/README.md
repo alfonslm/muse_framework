@@ -1,63 +1,87 @@
-# Audio export: single-file vs. multi-stem
+# Audio export: single file vs. several files in parallel
 
-This directory has two writers with a shared purpose (render the audio engine
-offline and encode the result to a file) but different scopes:
+This directory has two writers. Both render the audio engine offline and encode
+the result, but with a different scope:
 
-- `soundtrackwriter.{h,cpp}` — renders the whole engine graph and encodes the
-  **summed master output** to one file. This is the original, unchanged path
-  used by a normal single-instrument or full-score audio export.
-- `multisoundtrackwriter.{h,cpp}` — renders the graph **once** and encodes
-  several **per-track stems** to several files in the same pass, instead of
-  doing one full render per file. Added for exporting audio for multiple
-  parts/instruments of a score at once (see the companion `MuseScore` PR that
-  consumes `IPlayback::saveSoundTracks`).
+- `soundtrackwriter.{h,cpp}` — renders the mixer once and encodes its output to
+  one file. The original path, used for a normal single-file export (full score
+  or one part).
+- `parallelsoundtrackwriter.{h,cpp}` — renders several files at the same time
+  (typically one per part) on a pool of worker threads. Used by
+  `IPlayback::saveSoundTracks` for "export all parts" style exports, instead of
+  one full render per file.
 
-Both share encoder construction via `encoderfactory.{h,cpp}` (previously
-duplicated inline in `soundtrackwriter.cpp`).
+Both share encoder construction via `encoderfactory.{h,cpp}`.
 
-## How the stem capture works
+## What each file of a parallel export contains
 
-`Mixer::process()` already computes a separate buffer per track on every
-render block, before summing them into the master output (see
-`mixer.cpp`, `processTrackChannels()` / `mixOutputFromChannel()`). Only the
-summed result was ever kept. `Mixer::setTrackStemCallback()` adds an optional
-hook, invoked with each track's own buffer at exactly that point — right
-after that track's own volume/pan/fx chain has run, right before it's added
-to the master mix. No callback set means no behavior change to normal
-playback or the existing single-file export.
+Exactly what the single-file path produces for that file when every other
+track is muted: the file's own tracks, plus their aux sends run through the aux
+channels (e.g. reverb), mixed the way `Mixer::process()` mixes them.
 
-`MultiSoundTrackWriter` uses this to drive one offline render loop (mirroring
-`SoundTrackWriter`'s phased leading-silence / data / trailing-silence
-structure) while its callback encodes each requested track's buffer to that
-track's own encoder as it's produced. The render loop's own output buffer
-(the *summed* mix) is intentionally discarded — only the callback's per-track
-buffers are used.
+Like the single-file path, which renders `m_mixer` rather than the master track
+chain, the master fx chain and master volume are **not** applied. The parallel
+path deliberately matches that so both paths produce the same audio.
 
-**Known tradeoff, not a bug:** the stem callback fires *before* aux/reverb
-sends are computed (`writeTrackToAuxBuffers()` runs after it, per track, in
-the same loop). A part that relies on a shared reverb aux bus will sound
-drier in its exported stem than in the full mix, or than soloing that same
-track via the mixer panel (soloing still routes through aux sends normally).
-Moving the capture point to after aux mixing would need each track's *wet*
-contribution isolated per-track, which aux buses don't currently track
-per-source — a bigger change, and not attempted here.
+## How it works
 
-## Threading
+`SoundTrackTarget` is one output file and the list of tracks that go into it.
+`AudioContext::saveSoundTracks()`:
 
-`Mixer::setTrackStemCallback()` asserts `ONLY_AUDIO_ENGINE_THREAD`, matching
-its sibling setters (`setAuxSends`, `setTracksToProcessWhenIdle`). Both
-`SoundTrackWriter` and `MultiSoundTrackWriter` are driven from
-`AudioContext::doSaveSoundTrack(s)` inside `execOperation`, which is what
-gives the offline render exclusive access to the graph while it runs (see
-the existing comment in `audiocontext.cpp` above `doSaveSoundTrack`) — the
-same guarantee extends to `doSaveSoundTracks`.
+1. waits for online sounds to finish processing (same as `saveSoundTrack`),
+2. validates the targets: a track may only belong to one target, since each
+   target is rendered by one worker and a track can't be processed by two
+   threads at once,
+3. creates, per worker, a copy of every aux channel that at least one exported
+   track sends to (active send above 0%) — see below — and waits until the
+   copies are fully loaded,
+4. runs `ParallelSoundTrackWriter` inside `execOperation`, like the
+   single-file export, so the real-time driver doesn't touch the graph
+   meanwhile,
+5. releases the copies.
 
-## Plumbing added alongside this
+The writer starts one thread per worker (`std::thread::hardware_concurrency()`,
+at most one per file). Each worker takes the next file from the queue until
+the queue is empty, and renders it block by block:
 
-- `SoundTrackTarget` / `SoundTrackTargetList` (`audio/common/audiotypes.h`) —
-  one `{trackId, dstDevice}` pair per requested stem.
-- `IAudioContext`/`AudioContext::saveSoundTracks`,
-  `IPlayback`/`Playback::saveSoundTracks`, and `MsgCode::SaveSoundTracks` on
-  the RPC layer — plural counterparts to the existing singular
-  `saveSoundTrack`, wired identically (same progress/abort channels, same
-  `execOperation` synchronization).
+- the file's tracks are **borrowed** from the live mixer (their synths, fx and
+  volume/pan are used as is; nothing is reloaded),
+- each track's output is added to the file's mix and, per its aux sends, to
+  the worker's copy of the aux channels,
+- the aux copies are processed and added to the mix,
+- the mix is encoded.
+
+The engine thread meanwhile only reports progress and handles incoming
+messages (e.g. abort).
+
+## Aux channel copies
+
+The aux channels are shared by every track, so workers can't share the live
+ones. `IAudioFactory::makeFxChainCopy()` / `IFxResolver::createFxListCopy()`
+create new effect instances with the same settings (for VST: the same
+component state) under a unique copy id, bypassing the per-track instance
+cache of `resolveFxList()`, which would otherwise return the live instances.
+`releaseFxChainCopy()` unregisters them afterwards.
+
+VST instances load asynchronously on the main thread, and a `VstFxProcessor`
+passes audio through untouched until it's loaded, so the export waits until
+`FxChain::isReady()` for every copy (with a timeout, after which the export
+fails rather than silently exporting without the effect).
+
+A worker reuses its copies for every file it renders, calling
+`FxChain::resetState()` (`IFxProcessor::resetState()`) before each file so no
+reverb tail or compressor state carries over from the previous file.
+
+## Threading notes
+
+- Worker threads must not send async channel messages to the engine thread:
+  the first send from a thread registers it with the engine thread's message
+  queue, which blocks while the engine thread is itself blocked waiting for
+  the workers (deadlock). Nodes that send UI updates while processing skip them
+  in `ProcessMode::PlayingOffline`: level meters (`SignalNode`), automation
+  values (`AutomationControlNode`) and VST transport events
+  (`VstAudioClient::setIsOffline()`). The copies' own channels have no
+  receivers, so they never send.
+- During export the context player's position stays at 0 (see
+  `ContextPlayer::seek`), for the single-file path as well, so automation and
+  plugin transport see the same position in both paths.

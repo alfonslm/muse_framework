@@ -206,8 +206,8 @@ if (MUSE_MODULE_AUDIO_EXPORT)
         internal/export/encoderfactory.h
         internal/export/soundtrackwriter.cpp
         internal/export/soundtrackwriter.h
-        internal/export/multisoundtrackwriter.cpp
-        internal/export/multisoundtrackwriter.h
+        internal/export/parallelsoundtrackwriter.cpp
+        internal/export/parallelsoundtrackwriter.h
 
         # Encoders
         internal/export/abstractaudioencoder.h

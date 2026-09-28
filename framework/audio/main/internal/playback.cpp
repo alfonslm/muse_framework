@@ -685,16 +685,19 @@ async::Promise<bool> Playback::saveSoundTracks(const SoundTrackFormat& format, c
     return async::make_promise<bool>([this, format, targets](auto resolve, auto reject) {
         ONLY_AUDIO_MAIN_THREAD;
 
+        //! NOTE Flattened for packing: trackCounts[i] consecutive ids of trackIds belong to target i
         std::vector<TrackId> trackIds;
+        std::vector<uint64_t> trackCounts;
         std::vector<uint64_t> dstDevicePtrs;
-        trackIds.reserve(targets.size());
+        trackCounts.reserve(targets.size());
         dstDevicePtrs.reserve(targets.size());
         for (const SoundTrackTarget& target : targets) {
-            trackIds.push_back(target.trackId);
+            trackIds.insert(trackIds.end(), target.trackIds.cbegin(), target.trackIds.cend());
+            trackCounts.push_back(target.trackIds.size());
             dstDevicePtrs.push_back(reinterpret_cast<uint64_t>(target.dstDevice));
         }
 
-        Msg msg = rpc::make_request(ctxId(), MsgCode::SaveSoundTracks, RpcPacker::pack(format, trackIds, dstDevicePtrs));
+        Msg msg = rpc::make_request(ctxId(), MsgCode::SaveSoundTracks, RpcPacker::pack(format, trackIds, trackCounts, dstDevicePtrs));
         channel()->send(msg, [resolve, reject](const Msg& res) {
             ONLY_AUDIO_MAIN_THREAD;
             Ret ret;
