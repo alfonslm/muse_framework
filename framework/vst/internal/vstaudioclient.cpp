@@ -21,6 +21,8 @@
  */
 #include "vstaudioclient.h"
 
+#include "global/defer.h"
+
 #include "log.h"
 
 using namespace muse;
@@ -254,6 +256,19 @@ void VstAudioClient::flushSound()
 audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChannel,
                                          samples_t playbackPositionSamples)
 {
+    return process(output, samplesPerChannel, playbackPositionSamples, {});
+}
+
+audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChannel,
+                                         samples_t playbackPositionSamples, const VolumeGainChanges& volumeGainChanges)
+{
+    //! NOTE Whatever happens below, the gain changes of this call still take effect
+    DEFER {
+        if (!volumeGainChanges.empty()) {
+            m_volumeGain = volumeGainChanges.back().second;
+        }
+    };
+
     IAudioProcessorPtr processor = pluginProcessor();
     if (!processor || !output) {
         return 0;
@@ -292,7 +307,7 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
         m_inputEvents.clear();
         m_inputParamChanges.clearQueue();
 
-        fillOutputBufferInstrument(samplesPerChannel, output);
+        fillOutputBufferInstrument(samplesPerChannel, output, volumeGainChanges);
     } else {
         fillOutputBufferFx(samplesPerChannel, output);
     }
@@ -467,7 +482,7 @@ void VstAudioClient::extractInputSamples(samples_t sampleCount, const float* sou
     }
 }
 
-void VstAudioClient::fillOutputBufferInstrument(samples_t sampleCount, float* output)
+void VstAudioClient::fillOutputBufferInstrument(samples_t sampleCount, float* output, const VolumeGainChanges& volumeGainChanges)
 {
     if (!m_processData.outputs) {
         return;
@@ -476,12 +491,20 @@ void VstAudioClient::fillOutputBufferInstrument(samples_t sampleCount, float* ou
     for (const int busIndex : m_activeOutputBusses) {
         Steinberg::Vst::AudioBusBuffers bus = m_processData.outputs[busIndex];
 
+        muse::audio::gain_t gain = m_volumeGain;
+        size_t nextChangeIdx = 0;
+
         for (samples_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
+            while (nextChangeIdx < volumeGainChanges.size() && volumeGainChanges[nextChangeIdx].first <= sampleIndex) {
+                gain = volumeGainChanges[nextChangeIdx].second;
+                ++nextChangeIdx;
+            }
+
             size_t offset = sampleIndex * m_outputSpec.audioChannelCount;
 
             for (audioch_t audioChannelIndex = 0; audioChannelIndex < bus.numChannels; ++audioChannelIndex) {
                 float sample = bus.channelBuffers32[audioChannelIndex][sampleIndex];
-                output[offset + audioChannelIndex] += sample * m_volumeGain;
+                output[offset + audioChannelIndex] += sample * gain;
             }
         }
     }

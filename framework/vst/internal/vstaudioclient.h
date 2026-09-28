@@ -21,6 +21,9 @@
  */
 #pragma once
 
+#include <utility>
+#include <vector>
+
 #include "../ivstplugininstance.h"
 #include "../vsttypes.h"
 
@@ -59,6 +62,13 @@ public:
 
     audio::samples_t process(float* output, audio::samples_t samplesPerChannel, audio::samples_t playbackPositionSamples = 0);
 
+    //! NOTE Volume gain changes within one process() call: {sample offset in the call, new gain}, sorted by offset.
+    //! The volume gain is applied to the plugin's output by us, not by the plugin, so a gain change doesn't
+    //! need its own plugin process() call. After the call, the volume gain is the last gain of the list
+    using VolumeGainChanges = std::vector<std::pair<audio::samples_t, audio::gain_t> >;
+    audio::samples_t process(float* output, audio::samples_t samplesPerChannel, audio::samples_t playbackPositionSamples,
+                             const VolumeGainChanges& volumeGainChanges);
+
     ParamsMapping paramsMapping(const std::set<Steinberg::Vst::CtrlNumber>& controllers) const;
 
 private:
@@ -69,7 +79,7 @@ private:
     void updateProcessSetup();
     void extractInputSamples(muse::audio::samples_t sampleCount, const float* sourceBuffer);
 
-    void fillOutputBufferInstrument(muse::audio::samples_t sampleCount, float* output);
+    void fillOutputBufferInstrument(muse::audio::samples_t sampleCount, float* output, const VolumeGainChanges& volumeGainChanges);
     void fillOutputBufferFx(muse::audio::samples_t sampleCount, float* output);
 
     void processOutputEvents();
