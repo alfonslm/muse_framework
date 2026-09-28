@@ -21,6 +21,7 @@
  */
 #include "audiocontext.h"
 
+#include <chrono>
 #include <thread>
 #include <unordered_set>
 
@@ -994,8 +995,18 @@ Ret AudioContext::doSaveSoundTrack(io::IODevice& dstDevice, const SoundTrackForm
     // with the export, which is a data race on shared processors such as the reverb.
     Ret ret;
     Operation func = [this, writer, &ret]() {
+        const auto startTime = std::chrono::steady_clock::now();
         setMode(ProcessMode::PlayingOffline);
         ret = writer->write();
+        //! NOTE Same timing log as the parallel export, to compare the two paths
+        std::string trackNames;
+        for (const Track& t : m_tracks) {
+            if (t.type != TrackType::Aux_track && t.chain && t.chain->control() && !t.chain->control()->muted()) {
+                trackNames += (trackNames.empty() ? "" : ", ") + t.name;
+            }
+        }
+        LOGI() << "Rendered 1 file [" << trackNames << "] in "
+               << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count() << " ms";
         m_mixer->setOutputSpec(outputSpec());
         setMode(ProcessMode::Idle);
         m_player->seek(TimePosition::zero(m_outputSpec.sampleRate));
