@@ -32,11 +32,11 @@
 #ifdef CHECK_METHODS_DURATION
 #include <chrono>
 #define BEGIN_METHOD_DURATION \
-        auto _start_clock = std::chrono::high_resolution_clock::now();
+    auto _start_clock = std::chrono::high_resolution_clock::now();
 #define END_METHOD_DURATION(method) \
-        auto _end_clock = std::chrono::high_resolution_clock::now(); \
-        auto _duration_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_clock - _start_clock); \
-        LOGDA() << rpc::to_string(method) << " duration: " << (_duration_us.count() / 1000.0) << " ms";
+    auto _end_clock = std::chrono::high_resolution_clock::now(); \
+    auto _duration_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_clock - _start_clock); \
+    LOGDA() << rpc::to_string(method) << " duration: " << (_duration_us.count() / 1000.0) << " ms";
 #else
 #define BEGIN_METHOD_DURATION
 #define END_METHOD_DURATION(method)
