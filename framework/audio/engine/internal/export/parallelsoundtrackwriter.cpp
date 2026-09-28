@@ -239,6 +239,7 @@ Ret ParallelSoundTrackWriter::write()
     const uint64_t totalFrames = static_cast<uint64_t>(m_totalSamples) * m_files.size()
                                  + static_cast<uint64_t>(m_dataSamples) * renderOnlyJobCount;
     int lastProgress = -1;
+    std::vector<int> lastFilesProgress(m_files.size(), -1);
 
     auto allDone = [this]() {
         if (m_renderJobsDone.load() < m_renderJobs.size()) {
@@ -264,6 +265,14 @@ Ret ParallelSoundTrackWriter::write()
         if (current != lastProgress) {
             lastProgress = current;
             m_progress.progress(current, 100);
+        }
+
+        const std::vector<int> filesProgress = this->filesProgress();
+        for (size_t i = 0; i < filesProgress.size(); ++i) {
+            if (filesProgress.at(i) != lastFilesProgress.at(i)) {
+                lastFilesProgress[i] = filesProgress.at(i);
+                m_fileProgressChanged.send(i, filesProgress.at(i));
+            }
         }
 
         rpcChannel()->process();
@@ -306,6 +315,11 @@ void ParallelSoundTrackWriter::abort()
 Progress ParallelSoundTrackWriter::progress()
 {
     return m_progress;
+}
+
+async::Channel<size_t, int> ParallelSoundTrackWriter::fileProgressChanged() const
+{
+    return m_fileProgressChanged;
 }
 
 std::vector<int> ParallelSoundTrackWriter::filesProgress() const

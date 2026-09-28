@@ -99,6 +99,9 @@ public:
     //! NOTE Per file, in the order of the files given to the constructor: [0; 100]
     std::vector<int> filesProgress() const;
 
+    //! NOTE Sent on the thread that calls write(): file index, percent [0; 100]
+    async::Channel<size_t, int> fileProgressChanged() const;
+
 private:
     struct Accumulator {
         std::mutex mutex;
@@ -153,5 +156,6 @@ private:
     std::atomic<bool> m_isAborted = false;
 
     Progress m_progress;
+    async::Channel<size_t, int> m_fileProgressChanged;
 };
 }

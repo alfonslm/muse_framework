@@ -1102,6 +1102,10 @@ Ret AudioContext::doSaveSoundTracks(const SoundTrackTargetList& targets, const S
         m_saveSoundTracksProgress.progress.send(current, total, SaveSoundTrackStage::WritingSoundTrack);
     });
 
+    writer->fileProgressChanged().onReceive(this, [this](size_t fileIdx, int percent) {
+        m_saveSoundTracksProgress.progress.send(percent, static_cast<int64_t>(fileIdx), SaveSoundTrackStage::WritingSoundTrackFile);
+    });
+
     std::weak_ptr<ParallelSoundTrackWriter> weakPtr = writer;
     m_saveSoundTracksProgress.aborted.onNotify(this, [weakPtr]() {
         if (auto writer = weakPtr.lock()) {
@@ -1281,6 +1285,8 @@ void AudioContext::prepareExportAuxCopies(const SoundTrackTargetList& targets, s
         completed(make_ok());
         return;
     }
+
+    m_saveSoundTracksProgress.progress.send(0, 0, SaveSoundTrackStage::LoadingEffects);
 
     //! NOTE Not reset here or in releaseExportAuxCopies(): completed() runs the whole export
     //! from inside this timer's callback. The next prepareExportAuxCopies() replaces it

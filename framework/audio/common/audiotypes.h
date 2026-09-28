@@ -665,6 +665,8 @@ enum SaveSoundTrackStage {
     Unknown = 0,
     ProcessingOnlineSounds,
     WritingSoundTrack,
+    LoadingEffects,        //! A multi-file export waits for its copies of the aux effects to load (current/total unused)
+    WritingSoundTrackFile, //! Progress of one file of a multi-file export: current = percent [0; 100], total = file index
 };
 
 using SaveSoundTrackProgress = async::Channel<int64_t /*current*/, int64_t /*total*/, SaveSoundTrackStage>;
