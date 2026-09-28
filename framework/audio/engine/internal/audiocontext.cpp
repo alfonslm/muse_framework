@@ -22,6 +22,7 @@
 #include "audiocontext.h"
 
 #include <chrono>
+#include <map>
 #include <thread>
 #include <unordered_set>
 
@@ -30,6 +31,7 @@
 #include "audio/common/audioutils.h"
 
 #include "nodes/trackchain.h"
+#include "nodes/audiosourcenode.h"
 #include "nodes/signalnode.h"
 #include "nodes/automationcontrolnode.h"
 
@@ -818,9 +820,10 @@ async::Promise<Ret> AudioContext::saveSoundTrack(io::IODevice& dstDevice, const 
     });
 }
 
-async::Promise<Ret> AudioContext::saveSoundTracks(const SoundTrackTargetList& targets, const SoundTrackFormat& format)
+async::Promise<Ret> AudioContext::saveSoundTracks(const SoundTrackTargetList& targets, const SoundTrackFormat& format,
+                                                  const SoundTracksExportOptions& options)
 {
-    return async::make_promise<Ret>([this, targets, format](auto resolve, auto) {
+    return async::make_promise<Ret>([this, targets, format, options](auto resolve, auto) {
         ONLY_AUDIO_ENGINE_THREAD;
 
 #ifdef MUSE_MODULE_AUDIO_EXPORT
@@ -839,7 +842,7 @@ async::Promise<Ret> AudioContext::saveSoundTracks(const SoundTrackTargetList& ta
         const bool lazyProcessingWasEnabled = configuration()->isLazyProcessingOfOnlineSoundsEnabled();
         configuration()->setIsLazyProcessingOfOnlineSoundsEnabled(false);
 
-        listenInputProcessing([this, targets, format, lazyProcessingWasEnabled, resolve](Ret ret) {
+        listenInputProcessing([this, targets, format, options, lazyProcessingWasEnabled, resolve](Ret ret) {
             auto finish = [this, lazyProcessingWasEnabled, resolve](const Ret& ret) {
                 configuration()->setIsLazyProcessingOfOnlineSoundsEnabled(lazyProcessingWasEnabled);
                 (void)resolve(ret);
@@ -856,9 +859,9 @@ async::Promise<Ret> AudioContext::saveSoundTracks(const SoundTrackTargetList& ta
 
             //! NOTE Every worker needs its own copy of the aux channels, and VST copies finish
             //! loading asynchronously (on the main thread), so wait for them before rendering
-            prepareExportAuxCopies(targets, exportWorkerCount(targets), [this, targets, format, finish](Ret ret) {
+            prepareExportAuxCopies(targets, exportWorkerCount(targets), [this, targets, format, options, finish](Ret ret) {
                 if (ret) {
-                    ret = doSaveSoundTracks(targets, format);
+                    ret = doSaveSoundTracks(targets, format, options);
                 }
 
                 releaseExportAuxCopies();
@@ -870,6 +873,7 @@ async::Promise<Ret> AudioContext::saveSoundTracks(const SoundTrackTargetList& ta
 #else
         UNUSED(targets);
         UNUSED(format);
+        UNUSED(options);
         return resolve(make_ret(Err::DisabledAudioExport, "audio export is disabled"));
 #endif
     });
@@ -1026,33 +1030,73 @@ Ret AudioContext::doSaveSoundTrack(io::IODevice& dstDevice, const SoundTrackForm
 #endif
 }
 
-Ret AudioContext::doSaveSoundTracks(const SoundTrackTargetList& targets, const SoundTrackFormat& format)
+Ret AudioContext::doSaveSoundTracks(const SoundTrackTargetList& targets, const SoundTrackFormat& format,
+                                    const SoundTracksExportOptions& options)
 {
 #ifdef MUSE_MODULE_AUDIO_EXPORT
     using namespace muse::audio::soundtrack;
 
-    std::vector<ParallelSoundTrackWriter::Job> jobs;
-    jobs.reserve(targets.size());
-
-    for (const SoundTrackTarget& target : targets) {
-        ParallelSoundTrackWriter::Job job;
-        job.dstDevice = target.dstDevice;
-
-        for (const TrackId trackId : target.trackIds) {
-            const Track* t = track(trackId);
-            IF_ASSERT_FAILED(t && t->chain) {
-                return make_ret(Err::InvalidTrackId);
-            }
-
-            job.tracks.push_back(t->chain);
-            job.auxSends.push_back(t->params.auxSends);
+    //! NOTE Estimated relative rendering cost of a track, so the heaviest work starts first
+    auto trackWeight = [](const Track& t) {
+        int weight = 1;
+        switch (resourceTypeFromString(t.params.source.resourceMeta.type)) {
+        case AudioResourceType::VstPlugin: weight = 8;
+            break;
+        case AudioResourceType::MuseSamplerSoundPack: weight = 4;
+            break;
+        default: break;
         }
 
-        jobs.push_back(std::move(job));
+        for (const auto& fx : t.params.fxChain) {
+            if (fx.second.active && resourceTypeFromString(fx.second.resourceMeta.type) == AudioResourceType::VstPlugin) {
+                weight += 4;
+            }
+        }
+
+        return weight;
+    };
+
+    std::vector<ParallelSoundTrackWriter::Track> tracks;
+    std::map<TrackId, size_t> trackIndexById;
+    std::vector<ParallelSoundTrackWriter::File> files;
+    files.reserve(targets.size());
+
+    for (const SoundTrackTarget& target : targets) {
+        ParallelSoundTrackWriter::File file;
+        file.dstDevice = target.dstDevice;
+
+        for (const TrackId trackId : target.trackIds) {
+            auto it = trackIndexById.find(trackId);
+            if (it == trackIndexById.end()) {
+                const Track* t = track(trackId);
+                IF_ASSERT_FAILED(t && t->chain) {
+                    return make_ret(Err::InvalidTrackId);
+                }
+
+                ParallelSoundTrackWriter::Track writerTrack;
+                writerTrack.chain = t->chain;
+                writerTrack.auxSends = t->params.auxSends;
+                writerTrack.weight = trackWeight(*t);
+                if (auto source = std::dynamic_pointer_cast<AudioSourceNode>(t->chain->source())) {
+                    writerTrack.firstNoteTime = source->firstNoteTime();
+                }
+
+                it = trackIndexById.emplace(trackId, tracks.size()).first;
+                tracks.push_back(std::move(writerTrack));
+            }
+
+            file.tracks.push_back(it->second);
+        }
+
+        files.push_back(std::move(file));
     }
 
+    ParallelSoundTrackWriter::Options writerOptions;
+    writerOptions.idleUntilFirstNote = options.idleUntilFirstNote;
+
     const secs_t totalDuration = m_player->duration();
-    auto writer = std::make_shared<ParallelSoundTrackWriter>(std::move(jobs), m_exportAuxChannels, format, totalDuration);
+    auto writer = std::make_shared<ParallelSoundTrackWriter>(std::move(tracks), std::move(files), m_exportAuxChannels, format,
+                                                             totalDuration, writerOptions);
 
     writer->progress().progressChanged().onReceive(this, [this](int64_t current, int64_t total, std::string /*title*/) {
         m_saveSoundTracksProgress.progress.send(current, total, SaveSoundTrackStage::WritingSoundTrack);
@@ -1091,6 +1135,7 @@ Ret AudioContext::doSaveSoundTracks(const SoundTrackTargetList& targets, const S
 #else
     UNUSED(targets);
     UNUSED(format);
+    UNUSED(options);
     return make_ret(Err::DisabledAudioExport, "audio export is disabled");
 #endif
 }
@@ -1101,10 +1146,8 @@ Ret AudioContext::validateSoundTrackTargets(const SoundTrackTargetList& targets)
         return make_ret(Err::NoAudioToExport);
     }
 
-    //! NOTE Each track is rendered by the worker that renders its target, so a track
-    //! can't belong to two targets (it would be processed by two threads at once)
-    std::unordered_set<TrackId> seenTrackIds;
-
+    //! NOTE A track may belong to several targets (e.g. a part and the full score): it's still
+    //! rendered only once (see ParallelSoundTrackWriter), but it can't be listed twice in one target
     for (const SoundTrackTarget& target : targets) {
         if (!target.dstDevice) {
             return make_ret(Err::ErrorEncode);
@@ -1114,6 +1157,7 @@ Ret AudioContext::validateSoundTrackTargets(const SoundTrackTargetList& targets)
             return make_ret(Err::InvalidTrackId);
         }
 
+        std::unordered_set<TrackId> seenTrackIds;
         for (const TrackId trackId : target.trackIds) {
             if (!seenTrackIds.insert(trackId).second) {
                 return make_ret(Err::InvalidTrackId);
@@ -1131,8 +1175,14 @@ Ret AudioContext::validateSoundTrackTargets(const SoundTrackTargetList& targets)
 
 size_t AudioContext::exportWorkerCount(const SoundTrackTargetList& targets) const
 {
+    //! NOTE Render jobs are per file or per track, so there's no use for more workers than tracks
+    std::unordered_set<TrackId> trackIds;
+    for (const SoundTrackTarget& target : targets) {
+        trackIds.insert(target.trackIds.cbegin(), target.trackIds.cend());
+    }
+
     const size_t threadCount = std::max<size_t>(1, std::thread::hardware_concurrency());
-    return std::max<size_t>(1, std::min(threadCount, targets.size()));
+    return std::max<size_t>(1, std::min(threadCount, std::max(targets.size(), trackIds.size())));
 }
 
 std::vector<const AudioContext::Track*> AudioContext::auxTracks() const

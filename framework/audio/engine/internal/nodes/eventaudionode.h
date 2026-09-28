@@ -68,6 +68,8 @@ private:
         bool isValid() const { return mode != ProcessMode::Undefined; }
     };
 
+    std::optional<secs_t> firstNoteTime() const override;
+
     void onModeChanged(const ProcessMode mode) override;
     void onEnabledChanged(bool enabled) override;
     void onOutputSpecChanged(const OutputSpec& spec) override;

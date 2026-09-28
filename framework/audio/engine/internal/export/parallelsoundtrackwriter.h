@@ -24,6 +24,8 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <vector>
 
 #include "global/async/asyncable.h"
@@ -41,24 +43,44 @@ class IODevice;
 }
 
 namespace muse::audio::soundtrack {
-//! NOTE Renders several audio files (typically one per part) at the same time, on a pool of worker
-//! threads. Each file is a job: the worker that takes it renders only that job's tracks, mixes them
-//! the same way Mixer::process() does (track outputs plus the aux sends run through the aux
-//! channels) and encodes the result. The result is the same as exporting that file on its own with
-//! every other track muted, which is what the per-file export does.
+//! NOTE Renders several audio files (typically one per part, maybe plus the full score) at the same
+//! time, on a pool of worker threads. Every file is mixed the way Mixer::process() mixes: its tracks'
+//! outputs plus their aux sends run through the aux channels. The result is the same as exporting the
+//! file on its own with every other track muted, which is what the per-file export does.
 //!
-//! Tracks are borrowed from the live mixer: a job's tracks must not be part of any other job, so
-//! each track is only ever processed by one thread. The aux channels are shared by all tracks, so
-//! each worker gets its own copy of them (AuxChannels), created and fully loaded by the caller.
+//! Every track is rendered exactly once, by one worker (tracks are borrowed from the live mixer, and
+//! a track can't be processed by two threads):
+//! - Phase 1 (render jobs, heaviest first): a file whose tracks aren't in any other rendered file is
+//!   rendered and encoded directly by one job. Tracks that are also part of a combined file (e.g. the
+//!   full score, or a part sharing an instrument with another part) additionally add their output and
+//!   aux sends to that combined file's accumulated buffers. Tracks that only belong to combined files
+//!   get render-only jobs.
+//! - Phase 2 (after all render jobs): each combined file runs its accumulated aux sends through the
+//!   aux channels, mixes, and is encoded.
+//!
+//! The aux channels are shared by every track, so each worker has its own copy of them (AuxChannels),
+//! created and fully loaded by the caller, and reset before every file.
 class ParallelSoundTrackWriter : public async::Asyncable
 {
     muse::GlobalInject<rpc::IRpcChannel> rpcChannel;
 
 public:
-    struct Job {
-        std::vector<engine::TrackChainPtr> tracks;
-        std::vector<AuxSendsParams> auxSends; // per track, same order as tracks
+    struct Track {
+        engine::TrackChainPtr chain;
+        AuxSendsParams auxSends;
+        std::optional<secs_t> firstNoteTime; // nullopt: no notes at all
+        int weight = 1;                      // estimated relative rendering cost, for scheduling
+    };
+
+    struct File {
+        std::vector<size_t> tracks; // indices into the track list
         io::IODevice* dstDevice = nullptr;
+    };
+
+    struct Options {
+        //! NOTE Don't process a track until shortly before its first note (it's silent until then)
+        bool idleUntilFirstNote = true;
+        secs_t idlePreRoll = 0.1;
     };
 
     //! NOTE One worker's copy of the aux channels, indexed like AuxSendsParams.
@@ -66,33 +88,67 @@ public:
     using AuxChannels = std::vector<engine::TrackChainPtr>;
 
     //! NOTE The number of workers is auxChannelsPerWorker.size()
-    ParallelSoundTrackWriter(std::vector<Job> jobs, std::vector<AuxChannels> auxChannelsPerWorker, const SoundTrackFormat& format,
-                             const secs_t totalDuration);
+    ParallelSoundTrackWriter(std::vector<Track> tracks, std::vector<File> files, std::vector<AuxChannels> auxChannelsPerWorker,
+                             const SoundTrackFormat& format, const secs_t totalDuration, const Options& options);
 
     Ret write();
     void abort();
 
     Progress progress();
 
+    //! NOTE Per file, in the order of the files given to the constructor: [0; 100]
+    std::vector<int> filesProgress() const;
+
 private:
-    struct EncodedJob {
-        Job job;
+    struct Accumulator {
+        std::mutex mutex;
+        std::vector<float> dry;                    // m_dataSamples * channels
+        std::vector<std::vector<float> > auxSends; // per aux channel, empty if unused
+    };
+
+    struct FileState {
+        File file;
         encode::AbstractAudioEncoderPtr encoder;
+        std::vector<bool> auxUsed;                 // per aux channel
+        std::unique_ptr<Accumulator> accumulator;  // combined files only
         std::atomic<samples_t> framesWritten = 0;
+        int weight = 0;
+    };
+
+    struct RenderJob {
+        std::optional<size_t> fileIdx; // a directly rendered file, or none for render-only jobs
+        std::vector<size_t> tracks;
+        int weight = 0;
     };
 
     void workerLoop(size_t workerIdx);
-    bool renderJob(EncodedJob& encodedJob, const AuxChannels& auxChannels);
+    bool runRenderJob(const RenderJob& job, const AuxChannels& auxChannels);
+    bool runCombinedFile(FileState& file, const AuxChannels& auxChannels);
 
-    std::vector<std::unique_ptr<EncodedJob> > m_jobs;
+    bool renderTrack(size_t trackIdx, samples_t dataFrame, samples_t chunk, std::vector<float>& trackBuffer, std::vector<bool>& started);
+    void contributeToCombinedFiles(size_t trackIdx, samples_t dataFrame, samples_t chunk, const float* trackBuffer);
+    void processAuxChannels(const std::vector<bool>& auxUsed, const AuxChannels& auxChannels, std::vector<std::vector<float> >& auxBuffers,
+                            const std::vector<bool>& auxReceived, samples_t chunk, float* mixBuffer);
+    bool encodeSilence(FileState& file, samples_t frames, std::vector<float>& silenceBuffer);
+
+    std::vector<Track> m_tracks;
+    std::vector<std::unique_ptr<FileState> > m_files;
+    std::vector<std::vector<size_t> > m_trackCombinedFiles; // per track: combined files that need its output
+    std::vector<RenderJob> m_renderJobs;
+    std::vector<size_t> m_combinedFiles;
     std::vector<AuxChannels> m_auxChannelsPerWorker;
+    Options m_options;
 
     OutputSpec m_outputSpec;
     samples_t m_leadingSilenceSamples = 0;
     samples_t m_dataSamples = 0;
     samples_t m_totalSamples = 0;
+    samples_t m_idlePreRollSamples = 0;
 
-    std::atomic<size_t> m_nextJobIdx = 0;
+    std::atomic<size_t> m_nextRenderJobIdx = 0;
+    std::atomic<size_t> m_renderJobsDone = 0;
+    std::atomic<size_t> m_nextCombinedFileIdx = 0;
+    std::atomic<samples_t> m_renderOnlyFramesDone = 0;
     std::atomic<bool> m_hasEncodeError = false;
     std::atomic<bool> m_isAborted = false;
 

@@ -773,7 +773,8 @@ void EngineRpcController::init()
             std::vector<TrackId> trackIds;
             std::vector<uint64_t> trackCounts;
             std::vector<uint64_t> dstDevicePtrs;
-            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, format, trackIds, trackCounts, dstDevicePtrs)) {
+            SoundTracksExportOptions options;
+            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, format, trackIds, trackCounts, dstDevicePtrs, options.idleUntilFirstNote)) {
                 return make_response_ret(msg, make_ret(Err::InvalidRpcData));
             }
             IF_ASSERT_FAILED(trackCounts.size() == dstDevicePtrs.size()) {
@@ -797,7 +798,7 @@ void EngineRpcController::init()
             }
 
             if (auto actx = audioContext(msg.ctxId)) {
-                actx->saveSoundTracks(targets, format).onResolve(this, [this, msg](const Ret& ret) {
+                actx->saveSoundTracks(targets, format, options).onResolve(this, [this, msg](const Ret& ret) {
                     channel()->send(make_response_ret(msg, ret));
                 });
                 return make_response_delayed(msg);

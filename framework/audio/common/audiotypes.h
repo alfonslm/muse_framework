@@ -182,6 +182,15 @@ struct SoundTrackTarget {
 
 using SoundTrackTargetList = std::vector<SoundTrackTarget>;
 
+//! NOTE Options of a multi-file export (saveSoundTracks)
+struct SoundTracksExportOptions {
+    //! NOTE Don't process a track until shortly before its first note, since it's silent until then.
+    //! Only instruments that make sound without notes (e.g. drones, noise generators) are affected
+    bool idleUntilFirstNote = true;
+
+    bool operator==(const SoundTracksExportOptions& other) const { return idleUntilFirstNote == other.idleUntilFirstNote; }
+};
+
 struct AudioEngineConfig {
     bool autoProcessOnlineSoundsInBackground = false;
     bool isLazyProcessingOfOnlineSoundsEnabled = false;

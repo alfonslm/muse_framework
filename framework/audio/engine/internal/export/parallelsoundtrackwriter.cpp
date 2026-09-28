@@ -25,10 +25,18 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <numeric>
 #include <thread>
+
+#ifdef __APPLE__
+#include <pthread.h>
+#include <sys/qos.h>
+#endif
 
 #include "global/types/number.h"
 #include "audio/common/audioerrors.h"
+
+#include "../nodes/audiosourcenode.h"
 
 #include "encoderfactory.h"
 
@@ -54,11 +62,18 @@ static void mixInto(float* dst, const float* src, size_t size, float gain = 1.f)
     }
 }
 
-ParallelSoundTrackWriter::ParallelSoundTrackWriter(std::vector<Job> jobs, std::vector<AuxChannels> auxChannelsPerWorker,
-                                                   const SoundTrackFormat& format, const secs_t totalDuration)
-    : m_auxChannelsPerWorker(std::move(auxChannelsPerWorker))
+static bool isSendActive(const AuxSendsParams& sends, size_t auxIdx)
+{
+    return auxIdx < sends.size() && sends.at(auxIdx).active && !muse::is_zero(sends.at(auxIdx).signalAmount);
+}
+
+ParallelSoundTrackWriter::ParallelSoundTrackWriter(std::vector<Track> tracks, std::vector<File> files,
+                                                   std::vector<AuxChannels> auxChannelsPerWorker, const SoundTrackFormat& format,
+                                                   const secs_t totalDuration, const Options& options)
+    : m_tracks(std::move(tracks)), m_auxChannelsPerWorker(std::move(auxChannelsPerWorker)), m_options(options)
 {
     IF_ASSERT_FAILED(format.isValid()) {
+        m_hasEncodeError = true;
         return;
     }
 
@@ -73,25 +88,110 @@ ParallelSoundTrackWriter::ParallelSoundTrackWriter(std::vector<Job> jobs, std::v
     m_leadingSilenceSamples = durationToSamples(format.leadingSilenceDuration);
     const samples_t trailingSilenceSamples = durationToSamples(format.trailingSilenceDuration);
     m_totalSamples = m_leadingSilenceSamples + m_dataSamples + trailingSilenceSamples;
+    m_idlePreRollSamples = durationToSamples(options.idlePreRoll);
 
-    m_jobs.reserve(jobs.size());
-    for (Job& job : jobs) {
-        IF_ASSERT_FAILED(job.dstDevice && job.tracks.size() == job.auxSends.size()) {
+    const AuxChannels* firstAuxChannels = m_auxChannelsPerWorker.empty() ? nullptr : &m_auxChannelsPerWorker.front();
+    const size_t auxCount = firstAuxChannels ? firstAuxChannels->size() : 0;
+
+    for (File& file : files) {
+        const bool validTracks = std::all_of(file.tracks.cbegin(), file.tracks.cend(), [this](size_t t) { return t < m_tracks.size(); });
+        IF_ASSERT_FAILED(file.dstDevice && !file.tracks.empty() && validTracks) {
             m_hasEncodeError = true;
-            continue;
+            return;
         }
 
-        encode::AbstractAudioEncoderPtr encoder = createEncoder(format, *job.dstDevice);
+        encode::AbstractAudioEncoderPtr encoder = createEncoder(format, *file.dstDevice);
         if (!encoder || !encoder->begin(m_totalSamples)) {
             LOGE() << "Failed to start encoder";
             m_hasEncodeError = true;
+            return;
+        }
+
+        auto state = std::make_unique<FileState>();
+        state->encoder = std::move(encoder);
+        state->auxUsed.assign(auxCount, false);
+
+        //! NOTE Only the aux channels this file actually sends to (active, above 0%) are processed for it.
+        //! The others would get no input and stay silent, so Mixer::process() would skip them as well
+        for (const size_t t : file.tracks) {
+            state->weight += m_tracks.at(t).weight;
+
+            for (size_t auxIdx = 0; auxIdx < auxCount; ++auxIdx) {
+                if (firstAuxChannels->at(auxIdx) && isSendActive(m_tracks.at(t).auxSends, auxIdx)) {
+                    state->auxUsed[auxIdx] = true;
+                }
+            }
+        }
+
+        state->file = std::move(file);
+        m_files.push_back(std::move(state));
+    }
+
+    // Decide which files are rendered directly: smallest first (parts before the full score), and a file
+    // qualifies when none of its tracks is already rendered by another directly rendered file
+    std::vector<size_t> fileOrder(m_files.size());
+    std::iota(fileOrder.begin(), fileOrder.end(), 0);
+    std::stable_sort(fileOrder.begin(), fileOrder.end(), [this](size_t a, size_t b) {
+        return m_files.at(a)->file.tracks.size() < m_files.at(b)->file.tracks.size();
+    });
+
+    std::vector<bool> trackOwned(m_tracks.size(), false);
+    m_trackCombinedFiles.assign(m_tracks.size(), {});
+
+    for (const size_t fileIdx : fileOrder) {
+        FileState& state = *m_files.at(fileIdx);
+
+        const bool isFree = std::none_of(state.file.tracks.cbegin(), state.file.tracks.cend(), [&](size_t t) { return trackOwned.at(t); });
+        if (isFree) {
+            for (const size_t t : state.file.tracks) {
+                trackOwned[t] = true;
+            }
+
+            m_renderJobs.push_back({ fileIdx, state.file.tracks, state.weight });
             continue;
         }
 
-        auto encodedJob = std::make_unique<EncodedJob>();
-        encodedJob->job = std::move(job);
-        encodedJob->encoder = std::move(encoder);
-        m_jobs.push_back(std::move(encodedJob));
+        state.accumulator = std::make_unique<Accumulator>();
+        state.accumulator->dry.assign(m_dataSamples * m_outputSpec.audioChannelCount, 0.f);
+        state.accumulator->auxSends.resize(auxCount);
+        for (size_t auxIdx = 0; auxIdx < auxCount; ++auxIdx) {
+            if (state.auxUsed.at(auxIdx)) {
+                state.accumulator->auxSends[auxIdx].assign(m_dataSamples * m_outputSpec.audioChannelCount, 0.f);
+            }
+        }
+
+        for (const size_t t : state.file.tracks) {
+            m_trackCombinedFiles[t].push_back(fileIdx);
+        }
+
+        m_combinedFiles.push_back(fileIdx);
+    }
+
+    //! NOTE Tracks that only belong to combined files still need to be rendered once
+    for (size_t t = 0; t < m_tracks.size(); ++t) {
+        if (!trackOwned.at(t) && !m_trackCombinedFiles.at(t).empty()) {
+            m_renderJobs.push_back({ std::nullopt, { t }, m_tracks.at(t).weight });
+        }
+    }
+
+    //! NOTE Heaviest first, so a slow job doesn't start last and hold up the whole export
+    std::stable_sort(m_renderJobs.begin(), m_renderJobs.end(), [](const RenderJob& a, const RenderJob& b) {
+        return a.weight > b.weight;
+    });
+
+    std::stable_sort(m_combinedFiles.begin(), m_combinedFiles.end(), [this](size_t a, size_t b) {
+        auto usedAuxCount = [this](size_t f) { return std::count(m_files.at(f)->auxUsed.cbegin(), m_files.at(f)->auxUsed.cend(), true); };
+        return usedAuxCount(a) > usedAuxCount(b);
+    });
+
+    if (!m_combinedFiles.empty()) {
+        size_t bufferCount = 0;
+        for (const size_t f : m_combinedFiles) {
+            bufferCount += 1 + std::count(m_files.at(f)->auxUsed.cbegin(), m_files.at(f)->auxUsed.cend(), true);
+        }
+
+        const size_t bytes = bufferCount * m_dataSamples * m_outputSpec.audioChannelCount * sizeof(float);
+        LOGI() << m_combinedFiles.size() << " combined files, accumulated in " << (bytes / (1024 * 1024)) << " MB";
     }
 }
 
@@ -99,7 +199,7 @@ Ret ParallelSoundTrackWriter::write()
 {
     TRACEFUNC;
 
-    if (m_jobs.empty() || m_hasEncodeError || m_totalSamples == 0) {
+    if (m_files.empty() || m_hasEncodeError || m_totalSamples == 0) {
         return make_ret(Err::NoAudioToExport);
     }
 
@@ -118,8 +218,10 @@ Ret ParallelSoundTrackWriter::write()
         }
     }
 
-    const size_t workerCount = std::min(m_auxChannelsPerWorker.size(), m_jobs.size());
-    LOGI() << "Exporting " << m_jobs.size() << " files on " << workerCount << " threads";
+    const size_t workerCount = std::max<size_t>(1, std::min(m_auxChannelsPerWorker.size(),
+                                                            std::max(m_renderJobs.size(), m_combinedFiles.size())));
+    LOGI() << "Exporting " << m_files.size() << " files (" << m_combinedFiles.size() << " combined, " << m_renderJobs.size()
+           << " render jobs) on " << workerCount << " threads";
 
     const auto startTime = std::chrono::steady_clock::now();
 
@@ -131,25 +233,34 @@ Ret ParallelSoundTrackWriter::write()
 
     //! NOTE This (engine) thread only reports progress and handles incoming messages (e.g. abort).
     //! The workers never send messages themselves, see SignalNode::notifyAboutChanges()
-    const uint64_t totalFrames = static_cast<uint64_t>(m_totalSamples) * m_jobs.size();
+    const size_t renderOnlyJobCount = std::count_if(m_renderJobs.cbegin(), m_renderJobs.cend(), [](const RenderJob& job) {
+        return !job.fileIdx.has_value();
+    });
+    const uint64_t totalFrames = static_cast<uint64_t>(m_totalSamples) * m_files.size()
+                                 + static_cast<uint64_t>(m_dataSamples) * renderOnlyJobCount;
     int lastProgress = -1;
 
-    auto allJobsDone = [this]() {
-        for (const auto& encodedJob : m_jobs) {
-            if (encodedJob->framesWritten.load() < m_totalSamples) {
+    auto allDone = [this]() {
+        if (m_renderJobsDone.load() < m_renderJobs.size()) {
+            return false;
+        }
+
+        for (const auto& file : m_files) {
+            if (file->framesWritten.load() < m_totalSamples) {
                 return false;
             }
         }
+
         return true;
     };
 
     while (true) {
-        uint64_t framesWritten = 0;
-        for (const auto& encodedJob : m_jobs) {
-            framesWritten += encodedJob->framesWritten.load();
+        uint64_t framesDone = m_renderOnlyFramesDone.load();
+        for (const auto& file : m_files) {
+            framesDone += file->framesWritten.load();
         }
 
-        const int current = static_cast<int>((framesWritten * 100) / totalFrames);
+        const int current = totalFrames > 0 ? static_cast<int>((framesDone * 100) / totalFrames) : 0;
         if (current != lastProgress) {
             lastProgress = current;
             m_progress.progress(current, 100);
@@ -157,7 +268,7 @@ Ret ParallelSoundTrackWriter::write()
 
         rpcChannel()->process();
 
-        if (m_isAborted || m_hasEncodeError || allJobsDone() || m_nextJobIdx.load() >= m_jobs.size() + workerCount) {
+        if (m_isAborted || m_hasEncodeError || allDone()) {
             break;
         }
 
@@ -169,15 +280,15 @@ Ret ParallelSoundTrackWriter::write()
     }
 
     const auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count();
-    LOGI() << "Rendered " << m_jobs.size() << " files in " << totalMs << " ms";
+    LOGI() << "Rendered " << m_files.size() << " files in " << totalMs << " ms";
 
     if (m_isAborted) {
         m_isAborted = false;
         return make_ret(Ret::Code::Cancel);
     }
 
-    for (auto& encodedJob : m_jobs) {
-        encodedJob->encoder->end();
+    for (auto& file : m_files) {
+        file->encoder->end();
     }
 
     if (m_hasEncodeError) {
@@ -197,58 +308,303 @@ Progress ParallelSoundTrackWriter::progress()
     return m_progress;
 }
 
+std::vector<int> ParallelSoundTrackWriter::filesProgress() const
+{
+    std::vector<int> result;
+    result.reserve(m_files.size());
+
+    for (const auto& file : m_files) {
+        const uint64_t written = file->framesWritten.load();
+        result.push_back(m_totalSamples > 0 ? static_cast<int>((written * 100) / m_totalSamples) : 0);
+    }
+
+    return result;
+}
+
 void ParallelSoundTrackWriter::workerLoop(size_t workerIdx)
 {
+#ifdef __APPLE__
+    //! NOTE Work the user is waiting for: lets macOS prefer the performance cores for it
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+#endif
+
     const AuxChannels& auxChannels = m_auxChannelsPerWorker.at(workerIdx);
 
+    auto logTime = [workerIdx](const std::string& what, const std::chrono::steady_clock::time_point& start) {
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        LOGI() << "Rendered " << what << " in " << ms << " ms on worker " << workerIdx;
+    };
+
+    auto trackNames = [this](const std::vector<size_t>& tracks) {
+        std::string names;
+        for (const size_t t : tracks) {
+            names += (names.empty() ? "" : ", ") + m_tracks.at(t).chain->trackName();
+        }
+        return names;
+    };
+
+    // Phase 1: render jobs
     while (!m_isAborted && !m_hasEncodeError) {
-        const size_t jobIdx = m_nextJobIdx.fetch_add(1);
-        if (jobIdx >= m_jobs.size()) {
+        const size_t jobIdx = m_nextRenderJobIdx.fetch_add(1);
+        if (jobIdx >= m_renderJobs.size()) {
             break;
         }
 
-        const auto jobStart = std::chrono::steady_clock::now();
+        const auto start = std::chrono::steady_clock::now();
+        const RenderJob& job = m_renderJobs.at(jobIdx);
 
-        EncodedJob& encodedJob = *m_jobs.at(jobIdx);
-        if (!renderJob(encodedJob, auxChannels)) {
+        if (!runRenderJob(job, auxChannels)) {
             m_hasEncodeError = true;
         }
 
-        //! NOTE Per-file timing, to see which files (tracks) dominate the export time
-        std::string trackNames;
-        for (const TrackChainPtr& track : encodedJob.job.tracks) {
-            trackNames += (trackNames.empty() ? "" : ", ") + track->trackName();
+        ++m_renderJobsDone;
+        logTime((job.fileIdx ? "file [" : "tracks for combined files [") + trackNames(job.tracks) + "]", start);
+    }
+
+    // Phase 2: combined files, once every track has been rendered
+    while (!m_isAborted && !m_hasEncodeError && m_renderJobsDone.load() < m_renderJobs.size()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    while (!m_isAborted && !m_hasEncodeError) {
+        const size_t idx = m_nextCombinedFileIdx.fetch_add(1);
+        if (idx >= m_combinedFiles.size()) {
+            break;
         }
 
-        const auto jobMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - jobStart).count();
-        LOGI() << "Rendered file " << (jobIdx + 1) << "/" << m_jobs.size() << " [" << trackNames << "] in " << jobMs
-               << " ms on worker " << workerIdx;
+        const auto start = std::chrono::steady_clock::now();
+        FileState& file = *m_files.at(m_combinedFiles.at(idx));
+
+        if (!runCombinedFile(file, auxChannels)) {
+            m_hasEncodeError = true;
+        }
+
+        logTime("combined file [" + std::to_string(file.file.tracks.size()) + " tracks]", start);
     }
 }
 
-bool ParallelSoundTrackWriter::renderJob(EncodedJob& encodedJob, const AuxChannels& auxChannels)
+bool ParallelSoundTrackWriter::renderTrack(size_t trackIdx, samples_t dataFrame, samples_t chunk, std::vector<float>& trackBuffer,
+                                           std::vector<bool>& started)
 {
-    const Job& job = encodedJob.job;
-    encode::AbstractAudioEncoder& encoder = *encodedJob.encoder;
+    const Track& track = m_tracks.at(trackIdx);
+
+    std::fill(trackBuffer.begin(), trackBuffer.end(), 0.f);
+
+    if (m_options.idleUntilFirstNote) {
+        //! NOTE A track is silent until its first note, so it isn't processed until shortly before then
+        if (!track.firstNoteTime.has_value()) {
+            return false;
+        }
+
+        const samples_t firstNote
+            = static_cast<samples_t>(std::llround(std::max(0.0, track.firstNoteTime->raw()) * m_outputSpec.sampleRate));
+        const samples_t wakeUp = firstNote > m_idlePreRollSamples ? firstNote - m_idlePreRollSamples : 0;
+
+        if (dataFrame + chunk <= wakeUp) {
+            return false;
+        }
+
+        if (!started.at(trackIdx)) {
+            started[trackIdx] = true;
+
+            //! NOTE The source is still where the export started; move it to where it starts playing
+            if (dataFrame > 0) {
+                if (auto source = std::dynamic_pointer_cast<AudioSourceNode>(track.chain->source())) {
+                    source->seek(TimePosition::fromSamples(dataFrame, m_outputSpec.sampleRate), true);
+                }
+            }
+        }
+    }
+
+    track.chain->process(trackBuffer.data(), chunk);
+
+    return !isChainSilent(track.chain);
+}
+
+void ParallelSoundTrackWriter::contributeToCombinedFiles(size_t trackIdx, samples_t dataFrame, samples_t chunk, const float* trackBuffer)
+{
+    const size_t channelCount = m_outputSpec.audioChannelCount;
+    const size_t offset = dataFrame * channelCount;
+    const size_t size = chunk * channelCount;
+    const AuxSendsParams& sends = m_tracks.at(trackIdx).auxSends;
+
+    for (const size_t fileIdx : m_trackCombinedFiles.at(trackIdx)) {
+        FileState& file = *m_files.at(fileIdx);
+        Accumulator& acc = *file.accumulator;
+
+        std::lock_guard lock(acc.mutex);
+
+        mixInto(acc.dry.data() + offset, trackBuffer, size);
+
+        for (size_t auxIdx = 0; auxIdx < file.auxUsed.size(); ++auxIdx) {
+            if (file.auxUsed.at(auxIdx) && isSendActive(sends, auxIdx)) {
+                mixInto(acc.auxSends[auxIdx].data() + offset, trackBuffer, size, sends.at(auxIdx).signalAmount);
+            }
+        }
+    }
+}
+
+void ParallelSoundTrackWriter::processAuxChannels(const std::vector<bool>& auxUsed, const AuxChannels& auxChannels,
+                                                  std::vector<std::vector<float> >& auxBuffers, const std::vector<bool>& auxReceived,
+                                                  samples_t chunk, float* mixBuffer)
+{
+    const size_t chunkSize = chunk * m_outputSpec.audioChannelCount;
+
+    for (size_t auxIdx = 0; auxIdx < auxUsed.size() && auxIdx < auxChannels.size(); ++auxIdx) {
+        const TrackChainPtr& aux = auxChannels.at(auxIdx);
+        if (!auxUsed.at(auxIdx) || !aux) {
+            continue;
+        }
+
+        //! NOTE Process when the aux received a signal this block and/or if it's not yet silent
+        //! (e.g. reverb is still ringing out), same as Mixer::processAuxChannels()
+        if (!auxReceived.at(auxIdx) && isChainSilent(aux)) {
+            continue;
+        }
+
+        aux->process(auxBuffers[auxIdx].data(), chunk);
+
+        if (!isChainSilent(aux)) {
+            mixInto(mixBuffer, auxBuffers[auxIdx].data(), chunkSize);
+        }
+    }
+}
+
+bool ParallelSoundTrackWriter::encodeSilence(FileState& file, samples_t frames, std::vector<float>& silenceBuffer)
+{
+    const samples_t renderStep = m_outputSpec.samplesPerChannel;
+    samples_t done = 0;
+
+    while (done < frames && !m_isAborted) {
+        const samples_t chunk = std::min<samples_t>(renderStep, frames - done);
+        if (file.encoder->encode(chunk, silenceBuffer.data()) == 0) {
+            LOGE() << "Failed to encode";
+            return false;
+        }
+
+        file.framesWritten += chunk;
+        done += chunk;
+    }
+
+    return true;
+}
+
+bool ParallelSoundTrackWriter::runRenderJob(const RenderJob& job, const AuxChannels& auxChannels)
+{
+    const size_t channelCount = m_outputSpec.audioChannelCount;
+    const samples_t renderStep = m_outputSpec.samplesPerChannel;
+    const size_t bufferSize = renderStep * channelCount;
+
+    FileState* file = job.fileIdx ? m_files.at(*job.fileIdx).get() : nullptr;
+    const std::vector<bool> auxUsed = file ? file->auxUsed : std::vector<bool>(auxChannels.size(), false);
+
+    //! NOTE This worker's aux copies may still hold the tail of its previous file
+    for (size_t auxIdx = 0; auxIdx < auxUsed.size() && auxIdx < auxChannels.size(); ++auxIdx) {
+        if (auxUsed.at(auxIdx) && auxChannels.at(auxIdx)) {
+            if (FxChainPtr fxChain = auxChannels.at(auxIdx)->fxChain()) {
+                fxChain->resetState();
+            }
+        }
+    }
+
+    std::vector<float> trackBuffer(bufferSize, 0.f);
+    std::vector<float> mixBuffer(bufferSize, 0.f);
+    std::vector<std::vector<float> > auxBuffers(auxUsed.size());
+    std::vector<bool> auxReceived(auxUsed.size(), false);
+    std::vector<bool> started(m_tracks.size(), false);
+
+    for (size_t auxIdx = 0; auxIdx < auxUsed.size(); ++auxIdx) {
+        if (auxUsed.at(auxIdx)) {
+            auxBuffers[auxIdx].assign(bufferSize, 0.f);
+        }
+    }
+
+    // Phase 1: leading silence
+    if (file && !encodeSilence(*file, m_leadingSilenceSamples, mixBuffer)) {
+        return false;
+    }
+
+    // Phase 2: actual audio data, mixed like Mixer::process()
+    for (samples_t dataFrame = 0; dataFrame < m_dataSamples; dataFrame += renderStep) {
+        if (m_isAborted) {
+            return true;
+        }
+
+        const samples_t chunk = std::min<samples_t>(renderStep, m_dataSamples - dataFrame);
+        const size_t chunkSize = chunk * channelCount;
+
+        if (file) {
+            std::fill(mixBuffer.begin(), mixBuffer.end(), 0.f);
+            for (size_t auxIdx = 0; auxIdx < auxUsed.size(); ++auxIdx) {
+                if (auxUsed.at(auxIdx)) {
+                    std::fill(auxBuffers[auxIdx].begin(), auxBuffers[auxIdx].end(), 0.f);
+                    auxReceived[auxIdx] = false;
+                }
+            }
+        }
+
+        for (const size_t trackIdx : job.tracks) {
+            if (!renderTrack(trackIdx, dataFrame, chunk, trackBuffer, started)) {
+                continue;
+            }
+
+            contributeToCombinedFiles(trackIdx, dataFrame, chunk, trackBuffer.data());
+
+            if (!file) {
+                continue;
+            }
+
+            mixInto(mixBuffer.data(), trackBuffer.data(), chunkSize);
+
+            const AuxSendsParams& sends = m_tracks.at(trackIdx).auxSends;
+            for (size_t auxIdx = 0; auxIdx < auxUsed.size(); ++auxIdx) {
+                if (auxUsed.at(auxIdx) && isSendActive(sends, auxIdx)) {
+                    mixInto(auxBuffers[auxIdx].data(), trackBuffer.data(), chunkSize, sends.at(auxIdx).signalAmount);
+                    auxReceived[auxIdx] = true;
+                }
+            }
+        }
+
+        if (!file) {
+            m_renderOnlyFramesDone += chunk;
+            continue;
+        }
+
+        processAuxChannels(auxUsed, auxChannels, auxBuffers, auxReceived, chunk, mixBuffer.data());
+
+        if (file->encoder->encode(chunk, mixBuffer.data()) == 0) {
+            LOGE() << "Failed to encode";
+            return false;
+        }
+
+        file->framesWritten += chunk;
+    }
+
+    // Phase 3: trailing silence
+    if (file) {
+        std::fill(mixBuffer.begin(), mixBuffer.end(), 0.f);
+        if (!encodeSilence(*file, m_totalSamples - m_leadingSilenceSamples - m_dataSamples, mixBuffer)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ParallelSoundTrackWriter::runCombinedFile(FileState& file, const AuxChannels& auxChannels)
+{
+    IF_ASSERT_FAILED(file.accumulator) {
+        return false;
+    }
+
+    Accumulator& acc = *file.accumulator;
 
     const size_t channelCount = m_outputSpec.audioChannelCount;
     const samples_t renderStep = m_outputSpec.samplesPerChannel;
     const size_t bufferSize = renderStep * channelCount;
 
-    //! NOTE Only the aux channels this job actually sends to are processed. The others would get
-    //! no input and stay silent, so Mixer::process() would skip them as well
-    std::vector<bool> auxUsed(auxChannels.size(), false);
-    for (const AuxSendsParams& sends : job.auxSends) {
-        for (size_t auxIdx = 0; auxIdx < sends.size() && auxIdx < auxChannels.size(); ++auxIdx) {
-            if (auxChannels.at(auxIdx) && sends.at(auxIdx).active && !muse::is_zero(sends.at(auxIdx).signalAmount)) {
-                auxUsed[auxIdx] = true;
-            }
-        }
-    }
-
-    //! NOTE This worker's aux copies may still hold the tail of its previous job
-    for (size_t auxIdx = 0; auxIdx < auxChannels.size(); ++auxIdx) {
-        if (auxUsed[auxIdx]) {
+    for (size_t auxIdx = 0; auxIdx < file.auxUsed.size() && auxIdx < auxChannels.size(); ++auxIdx) {
+        if (file.auxUsed.at(auxIdx) && auxChannels.at(auxIdx)) {
             if (FxChainPtr fxChain = auxChannels.at(auxIdx)->fxChain()) {
                 fxChain->resetState();
             }
@@ -256,120 +612,54 @@ bool ParallelSoundTrackWriter::renderJob(EncodedJob& encodedJob, const AuxChanne
     }
 
     std::vector<float> mixBuffer(bufferSize, 0.f);
-    std::vector<float> trackBuffer(bufferSize, 0.f);
-    std::vector<std::vector<float> > auxBuffers(auxChannels.size());
-    std::vector<bool> auxReceived(auxChannels.size(), false);
-    for (size_t auxIdx = 0; auxIdx < auxChannels.size(); ++auxIdx) {
-        if (auxUsed[auxIdx]) {
+    std::vector<std::vector<float> > auxBuffers(file.auxUsed.size());
+    std::vector<bool> auxReceived(file.auxUsed.size(), false);
+
+    for (size_t auxIdx = 0; auxIdx < file.auxUsed.size(); ++auxIdx) {
+        if (file.auxUsed.at(auxIdx)) {
             auxBuffers[auxIdx].assign(bufferSize, 0.f);
         }
     }
 
-    auto encode = [&](samples_t chunk, const float* buffer) {
-        if (encoder.encode(chunk, buffer) == 0) {
+    if (!encodeSilence(file, m_leadingSilenceSamples, mixBuffer)) {
+        return false;
+    }
+
+    for (samples_t dataFrame = 0; dataFrame < m_dataSamples; dataFrame += renderStep) {
+        if (m_isAborted) {
+            return true;
+        }
+
+        const samples_t chunk = std::min<samples_t>(renderStep, m_dataSamples - dataFrame);
+        const size_t offset = dataFrame * channelCount;
+        const size_t chunkSize = chunk * channelCount;
+
+        std::copy(acc.dry.cbegin() + offset, acc.dry.cbegin() + offset + chunkSize, mixBuffer.begin());
+
+        for (size_t auxIdx = 0; auxIdx < file.auxUsed.size(); ++auxIdx) {
+            if (!file.auxUsed.at(auxIdx)) {
+                continue;
+            }
+
+            const auto sendsBegin = acc.auxSends[auxIdx].cbegin() + offset;
+            std::copy(sendsBegin, sendsBegin + chunkSize, auxBuffers[auxIdx].begin());
+            auxReceived[auxIdx] = std::any_of(sendsBegin, sendsBegin + chunkSize, [](float s) { return s != 0.f; });
+        }
+
+        processAuxChannels(file.auxUsed, auxChannels, auxBuffers, auxReceived, chunk, mixBuffer.data());
+
+        if (file.encoder->encode(chunk, mixBuffer.data()) == 0) {
             LOGE() << "Failed to encode";
             return false;
         }
 
-        encodedJob.framesWritten += chunk;
-        return true;
-    };
-
-    samples_t framesWritten = 0;
-
-    // Phase 1: leading silence
-    while (framesWritten < m_leadingSilenceSamples) {
-        if (m_isAborted) {
-            return true;
-        }
-
-        const samples_t chunk = std::min<samples_t>(renderStep, m_leadingSilenceSamples - framesWritten);
-        if (!encode(chunk, mixBuffer.data())) {
-            return false;
-        }
-        framesWritten += chunk;
+        file.framesWritten += chunk;
     }
 
-    // Phase 2: actual audio data, mixed like Mixer::process()
-    const samples_t audioEnd = m_leadingSilenceSamples + m_dataSamples;
-    while (framesWritten < audioEnd) {
-        if (m_isAborted) {
-            return true;
-        }
+    //! NOTE The accumulated audio isn't needed anymore
+    acc.dry = std::vector<float>();
+    acc.auxSends = std::vector<std::vector<float> >();
 
-        const samples_t chunk = std::min<samples_t>(renderStep, audioEnd - framesWritten);
-        const size_t chunkSize = chunk * channelCount;
-
-        std::fill(mixBuffer.begin(), mixBuffer.end(), 0.f);
-        for (size_t auxIdx = 0; auxIdx < auxChannels.size(); ++auxIdx) {
-            if (auxUsed[auxIdx]) {
-                std::fill(auxBuffers[auxIdx].begin(), auxBuffers[auxIdx].end(), 0.f);
-                auxReceived[auxIdx] = false;
-            }
-        }
-
-        for (size_t trackIdx = 0; trackIdx < job.tracks.size(); ++trackIdx) {
-            const TrackChainPtr& track = job.tracks.at(trackIdx);
-
-            std::fill(trackBuffer.begin(), trackBuffer.end(), 0.f);
-            track->process(trackBuffer.data(), chunk);
-
-            if (isChainSilent(track)) {
-                continue;
-            }
-
-            mixInto(mixBuffer.data(), trackBuffer.data(), chunkSize);
-
-            const AuxSendsParams& sends = job.auxSends.at(trackIdx);
-            for (size_t auxIdx = 0; auxIdx < sends.size() && auxIdx < auxChannels.size(); ++auxIdx) {
-                const AuxSendParams& send = sends.at(auxIdx);
-                if (!auxUsed[auxIdx] || !send.active || muse::is_zero(send.signalAmount)) {
-                    continue;
-                }
-
-                mixInto(auxBuffers[auxIdx].data(), trackBuffer.data(), chunkSize, send.signalAmount);
-                auxReceived[auxIdx] = true;
-            }
-        }
-
-        for (size_t auxIdx = 0; auxIdx < auxChannels.size(); ++auxIdx) {
-            if (!auxUsed[auxIdx]) {
-                continue;
-            }
-
-            //! NOTE Process when the aux received a signal this block and/or if it's not yet silent
-            //! (e.g. reverb is still ringing out), same as Mixer::processAuxChannels()
-            const TrackChainPtr& aux = auxChannels.at(auxIdx);
-            if (!auxReceived[auxIdx] && isChainSilent(aux)) {
-                continue;
-            }
-
-            aux->process(auxBuffers[auxIdx].data(), chunk);
-
-            if (!isChainSilent(aux)) {
-                mixInto(mixBuffer.data(), auxBuffers[auxIdx].data(), chunkSize);
-            }
-        }
-
-        if (!encode(chunk, mixBuffer.data())) {
-            return false;
-        }
-        framesWritten += chunk;
-    }
-
-    // Phase 3: trailing silence
     std::fill(mixBuffer.begin(), mixBuffer.end(), 0.f);
-    while (framesWritten < m_totalSamples) {
-        if (m_isAborted) {
-            return true;
-        }
-
-        const samples_t chunk = std::min<samples_t>(renderStep, m_totalSamples - framesWritten);
-        if (!encode(chunk, mixBuffer.data())) {
-            return false;
-        }
-        framesWritten += chunk;
-    }
-
-    return true;
+    return encodeSilence(file, m_totalSamples - m_leadingSilenceSamples - m_dataSamples, mixBuffer);
 }

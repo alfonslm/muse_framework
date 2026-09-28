@@ -679,10 +679,11 @@ async::Promise<bool> Playback::saveSoundTrack(const SoundTrackFormat& format, io
     }, PromiseType::AsyncByBody);
 }
 
-async::Promise<bool> Playback::saveSoundTracks(const SoundTrackFormat& format, const SoundTrackTargetList& targets)
+async::Promise<bool> Playback::saveSoundTracks(const SoundTrackFormat& format, const SoundTrackTargetList& targets,
+                                               const SoundTracksExportOptions& options)
 {
     ONLY_AUDIO_MAIN_THREAD;
-    return async::make_promise<bool>([this, format, targets](auto resolve, auto reject) {
+    return async::make_promise<bool>([this, format, targets, options](auto resolve, auto reject) {
         ONLY_AUDIO_MAIN_THREAD;
 
         //! NOTE Flattened for packing: trackCounts[i] consecutive ids of trackIds belong to target i
@@ -697,7 +698,8 @@ async::Promise<bool> Playback::saveSoundTracks(const SoundTrackFormat& format, c
             dstDevicePtrs.push_back(reinterpret_cast<uint64_t>(target.dstDevice));
         }
 
-        Msg msg = rpc::make_request(ctxId(), MsgCode::SaveSoundTracks, RpcPacker::pack(format, trackIds, trackCounts, dstDevicePtrs));
+        Msg msg = rpc::make_request(ctxId(), MsgCode::SaveSoundTracks, RpcPacker::pack(format, trackIds, trackCounts, dstDevicePtrs,
+                                                                                       options.idleUntilFirstNote));
         channel()->send(msg, [resolve, reject](const Msg& res) {
             ONLY_AUDIO_MAIN_THREAD;
             Ret ret;
