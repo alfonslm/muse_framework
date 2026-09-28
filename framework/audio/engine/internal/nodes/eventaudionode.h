@@ -69,6 +69,7 @@ private:
     };
 
     void onModeChanged(const ProcessMode mode) override;
+    void onEnabledChanged(bool enabled) override;
     void onOutputSpecChanged(const OutputSpec& spec) override;
 
     void doSelfProcess(float* buffer, samples_t samplesPerChannel) override;

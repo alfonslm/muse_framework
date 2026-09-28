@@ -59,7 +59,32 @@ void EventAudioNode::onModeChanged(const ProcessMode mode)
         return;
     }
 
+    //! NOTE A disabled (muted) source isn't processed, so its synth stays idle and gets the actual
+    //! mode once the source is enabled again (see onEnabledChanged). Activating a plugin synth can be
+    //! expensive (e.g. Kontakt), and exporting parts one by one switches every track to
+    //! PlayingOffline and back once per part, with all tracks but the part's own muted
+    if (!m_enabled) {
+        return;
+    }
+
     m_synth->setMode(mode);
+    m_synth->flushSound();
+}
+
+void EventAudioNode::onEnabledChanged(bool enabled)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    if (!m_synth) {
+        return;
+    }
+
+    const ProcessMode synthMode = (enabled && m_mode != ProcessMode::Undefined) ? m_mode : ProcessMode::Idle;
+    if (m_synth->mode() == synthMode) {
+        return;
+    }
+
+    m_synth->setMode(synthMode);
     m_synth->flushSound();
 }
 
