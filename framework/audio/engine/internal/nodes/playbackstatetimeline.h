@@ -69,6 +69,7 @@ private:
         mpe::duration_t length = 0;  // the marking's Time
         Type type = Type::On;
         bool fade = true;
+        mpe::PlaybackStateEvent::Curve curve = mpe::PlaybackStateEvent::Curve::Smooth;
         float startGain = 1.f;       // gain just before the anchor
         bool inNoteAtTime = false;   // Idle only: a note is sounding where it's written
     };

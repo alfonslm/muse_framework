@@ -596,14 +596,16 @@ inline void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::ControllerChang
 
 inline void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackStateEvent& value)
 {
-    p.process(static_cast<uint8_t>(value.type), value.time, value.fade, value.layerIdx);
+    p.process(static_cast<uint8_t>(value.type), value.time, value.fade, static_cast<uint8_t>(value.curve), value.layerIdx);
 }
 
 inline void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackStateEvent& value)
 {
     uint8_t type = 0;
-    p.process(type, value.time, value.fade, value.layerIdx);
+    uint8_t curve = 0;
+    p.process(type, value.time, value.fade, curve, value.layerIdx);
     value.type = static_cast<muse::mpe::PlaybackStateEvent::Type>(type);
+    value.curve = static_cast<muse::mpe::PlaybackStateEvent::Curve>(curve);
 }
 
 inline void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackEvent& value)

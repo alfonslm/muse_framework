@@ -348,14 +348,23 @@ struct PlaybackStateEvent {
         Idle,
     };
 
+    //! NOTE Shape of a fade: Smooth (S-curve, soft at both ends), Linear (in amplitude),
+    //! or Audio (linear in dB, like a fader's audio taper)
+    enum class Curve : unsigned char {
+        Smooth = 0,
+        Linear,
+        Audio,
+    };
+
     Type type = Type::On;
     duration_t time = 90000; // microseconds
     bool fade = true;        // false: cut
+    Curve curve = Curve::Smooth;
     layer_idx_t layerIdx = 0;
 
     bool operator==(const PlaybackStateEvent& e) const
     {
-        return type == e.type && time == e.time && fade == e.fade && layerIdx == e.layerIdx;
+        return type == e.type && time == e.time && fade == e.fade && curve == e.curve && layerIdx == e.layerIdx;
     }
 };
 

@@ -23,6 +23,8 @@
 #include "playbackstatetimeline.h"
 
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 
 using namespace muse;
 using namespace muse::mpe;
@@ -62,6 +64,7 @@ std::shared_ptr<const PlaybackStateTimeline> PlaybackStateTimeline::build(const 
                 marking.length = std::max<duration_t>(0, state->time);
                 marking.type = state->type;
                 marking.fade = state->fade;
+                marking.curve = state->curve;
                 marking.anchor = isStart(state->type) ? timestamp - marking.length : timestamp;
 
                 if (isHard(state->type)) {
@@ -123,6 +126,31 @@ std::shared_ptr<const PlaybackStateTimeline> PlaybackStateTimeline::build(const 
     return timeline;
 }
 
+//! Fraction of the fade done at `progress` [0; 1], shaped by the marking's curve: how far the gain
+//! has moved from where the fade starts to where it ends
+static float fadeShape(PlaybackStateEvent::Curve curve, bool fadeIn, float progress)
+{
+    switch (curve) {
+    case PlaybackStateEvent::Curve::Linear:
+        return progress;
+    case PlaybackStateEvent::Curve::Smooth: {
+        // Half a cosine period: starts and ends with zero slope, so there's no audible corner
+        constexpr float PI = std::numbers::pi_v<float>;
+        return 0.5f - 0.5f * std::cos(PI * progress);
+    }
+    case PlaybackStateEvent::Curve::Audio: {
+        // Linear in dB over a 60 dB range, rescaled so the fade still starts and ends exactly
+        constexpr float RANGE_DB = 60.f;
+        constexpr float FLOOR = 0.001f; // -60 dB
+        const float remaining = fadeIn ? 1.f - progress : progress;
+        const float gain = (std::pow(10.f, -RANGE_DB * remaining / 20.f) - FLOOR) / (1.f - FLOOR);
+        return fadeIn ? gain : 1.f - gain;
+    }
+    }
+
+    return progress;
+}
+
 float PlaybackStateTimeline::rampedGain(const Marking& m, float startGain, timestamp_t t)
 {
     const float progress = m.length > 0
@@ -130,11 +158,11 @@ float PlaybackStateTimeline::rampedGain(const Marking& m, float startGain, times
                            : (t >= m.anchor ? 1.f : 0.f);
 
     if (isStart(m.type)) {
-        return m.fade ? startGain + (1.f - startGain) * progress : 1.f;
+        return m.fade ? startGain + (1.f - startGain) * fadeShape(m.curve, true, progress) : 1.f;
     }
 
     if (m.fade) {
-        return startGain * (1.f - progress);
+        return startGain * (1.f - fadeShape(m.curve, false, progress));
     }
 
     return t < m.anchor + m.length ? startGain : 0.f;
