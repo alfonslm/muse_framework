@@ -76,6 +76,7 @@ void EventAudioNode::setPlaybackStateTimeline(PlaybackStateTimelinePtr timeline)
     m_timelineChanged = true;
 }
 
+//! Time of the first note in the synth's playback data, or nullopt if there are no notes.
 std::optional<secs_t> EventAudioNode::firstNoteTime() const
 {
     ONLY_AUDIO_ENGINE_THREAD;
