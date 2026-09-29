@@ -23,6 +23,7 @@
 #include "eventaudionode.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "audio/common/audiosanitizer.h"
 
@@ -46,11 +47,33 @@ EventAudioNode::EventAudioNode(TrackId trackId, const mpe::PlaybackData& playbac
             onOffStreamReceived();
         });
     }
+
+    setPlaybackStateTimeline(PlaybackStateTimeline::build(m_playbackData.originEvents));
+
+    m_playbackData.mainStream.onReceive(this, [this](const PlaybackEventsMap& events, const DynamicAutomationLayers&) {
+        setPlaybackStateTimeline(PlaybackStateTimeline::build(events));
+    });
 }
 
 EventAudioNode::~EventAudioNode()
 {
     m_playbackData.offStream.disconnect(this);
+    m_playbackData.mainStream.disconnect(this);
+}
+
+void EventAudioNode::setPlaybackStateTimeline(PlaybackStateTimelinePtr timeline)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    if (!timeline && !m_engineTimeline) {
+        return;
+    }
+
+    m_engineTimeline = timeline;
+
+    std::lock_guard lock(m_timelineMutex);
+    m_pendingTimeline = std::move(timeline);
+    m_timelineChanged = true;
 }
 
 std::optional<secs_t> EventAudioNode::firstNoteTime() const
@@ -63,17 +86,30 @@ std::optional<secs_t> EventAudioNode::firstNoteTime() const
 
     //! NOTE The synth's playback data is kept up to date with the score (main stream changes)
     const mpe::PlaybackEventsMap& events = m_synth->playbackData().originEvents;
+    std::optional<timestamp_t> firstNote;
     for (auto it = events.cbegin(); it != events.cend(); ++it) {
         const bool hasNote = std::any_of(it->second.cbegin(), it->second.cend(), [](const mpe::PlaybackEvent& event) {
             return std::holds_alternative<mpe::NoteEvent>(event);
         });
 
         if (hasNote) {
-            return muse::usecs_to_secs(muse::usecs_t(it->first));
+            firstNote = it->first;
+            break;
         }
     }
 
-    return std::nullopt;
+    //! NOTE A Live (or On) marking can make the instrument sound before its first note, e.g. a drone
+    if (m_engineTimeline) {
+        if (const std::optional<timestamp_t> firstSound = m_engineTimeline->firstSoundWithoutNote()) {
+            firstNote = firstNote.has_value() ? std::min(*firstNote, *firstSound) : *firstSound;
+        }
+    }
+
+    if (!firstNote.has_value()) {
+        return std::nullopt;
+    }
+
+    return muse::usecs_to_secs(muse::usecs_t(std::max<timestamp_t>(0, *firstNote)));
 }
 
 void EventAudioNode::onModeChanged(const ProcessMode mode)
@@ -130,7 +166,94 @@ void EventAudioNode::doSelfProcess(float* buffer, samples_t samplesPerChannel)
         return;
     }
 
+    if (m_timelineChanged.load()) {
+        //! NOTE Not waiting for the lock: the new markings are picked up on the next block instead
+        std::unique_lock lock(m_timelineMutex, std::try_to_lock);
+        if (lock.owns_lock()) {
+            m_timeline = m_pendingTimeline;
+            m_timelineChanged = false;
+        }
+    }
+
+    if (m_timeline || m_sleeping) {
+        processWithPlaybackStates(buffer, samplesPerChannel);
+        return;
+    }
+
     m_synth->process(buffer, samplesPerChannel);
+}
+
+void EventAudioNode::processWithPlaybackStates(float* buffer, samples_t samplesPerChannel)
+{
+    const sample_rate_t sampleRate = m_outputSpec.sampleRate;
+    const size_t channelCount = m_outputSpec.audioChannelCount;
+    IF_ASSERT_FAILED(sampleRate > 0) {
+        return;
+    }
+
+    const TimePosition position = m_sleeping ? m_sleepPosition : m_synth->playbackPosition();
+    auto toUsecs = [sampleRate](samples_t samples) {
+        return static_cast<timestamp_t>(static_cast<double>(samples) * 1000000.0 / sampleRate);
+    };
+
+    const timestamp_t from = toUsecs(position.samples());
+    const timestamp_t to = toUsecs(position.samples() + samplesPerChannel);
+
+    //! NOTE "needed": the markings or notes require processing; otherwise an idle instrument is
+    //! only processed while it may still be ringing out after its last note
+    const bool needed = !m_timeline || m_timeline->isAwake(from, to, false);
+    const bool awake = needed || m_timeline->isAwake(from, to, m_ringingOut);
+
+    if (!awake) {
+        if (!m_sleeping) {
+            m_sleeping = true;
+            m_sleepPosition = position;
+        }
+
+        m_sleepPosition.forward(samplesPerChannel);
+        std::fill(buffer, buffer + samplesPerChannel * channelCount, 0.f);
+        return;
+    }
+
+    if (m_sleeping) {
+        //! NOTE The synth stood still while asleep: move it to where it would be now
+        m_sleeping = false;
+        m_synth->setPlaybackPosition(m_sleepPosition);
+        m_synth->flushSound();
+    }
+
+    m_synth->process(buffer, samplesPerChannel);
+
+    if (!m_timeline) {
+        return;
+    }
+
+    if (m_timeline->affectsGain(from, to)) {
+        for (samples_t i = 0; i < samplesPerChannel; ++i) {
+            const float gain = m_timeline->gainAt(toUsecs(position.samples() + i));
+            float* frame = buffer + i * channelCount;
+            for (size_t c = 0; c < channelCount; ++c) {
+                frame[c] *= gain;
+            }
+        }
+    }
+
+    if (needed) {
+        m_ringingOut = true;
+        m_silentSamples = 0;
+        return;
+    }
+
+    //! NOTE Ringing out after the last note: sleep once the output has stayed below about -100 dBFS for half a second
+    constexpr float SILENCE_THRESHOLD = 0.00001f;
+    const bool silent = std::all_of(buffer, buffer + samplesPerChannel * channelCount, [](float s) {
+        return std::fabs(s) < SILENCE_THRESHOLD;
+    });
+
+    m_silentSamples = silent ? m_silentSamples + samplesPerChannel : 0;
+    if (m_silentSamples >= static_cast<samples_t>(sampleRate / 2)) {
+        m_ringingOut = false;
+    }
 }
 
 void EventAudioNode::seek(const TimePosition& position, const bool flushSound)
@@ -140,6 +263,14 @@ void EventAudioNode::seek(const TimePosition& position, const bool flushSound)
     IF_ASSERT_FAILED(m_synth) {
         return;
     }
+
+    //! NOTE A sleeping synth wakes up at the new position (see processWithPlaybackStates)
+    if (m_sleeping) {
+        m_sleepPosition = position;
+    }
+
+    m_ringingOut = true;
+    m_silentSamples = 0;
 
     if (m_synth->playbackPosition() == position) {
         return;

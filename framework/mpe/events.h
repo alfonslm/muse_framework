@@ -332,12 +332,42 @@ struct SyllableEvent {
 
 using SyllableEventList = std::vector<SyllableEvent>;
 
+//! NOTE A playback marking in the score that switches an instrument on/off (hard) or between
+//! live/idle (soft) from its timestamp on:
+//! - On: plays again after an Off. Live: keeps running even without notes (e.g. drones, noise makers).
+//!   Both are complete at the timestamp: the instrument wakes up `time` earlier and, with a fade,
+//!   fades in over that time.
+//! - Off: silent until the next On, whatever is written. Idle: sleeps while it has nothing to play and
+//!   wakes up `time` before each note. Both begin at the timestamp: with a fade they fade out over
+//!   `time`, otherwise they stop after it.
+struct PlaybackStateEvent {
+    enum class Type : unsigned char {
+        On = 0,
+        Off,
+        Live,
+        Idle,
+    };
+
+    Type type = Type::On;
+    duration_t time = 90000; // microseconds
+    bool fade = true;        // false: cut
+    layer_idx_t layerIdx = 0;
+
+    bool operator==(const PlaybackStateEvent& e) const
+    {
+        return type == e.type && time == e.time && fade == e.fade && layerIdx == e.layerIdx;
+    }
+};
+
+using PlaybackStateEventList = std::vector<PlaybackStateEvent>;
+
 using PlaybackEvent = std::variant<std::monostate,
                                    NoteEvent,
                                    TextArticulationEvent,
                                    SoundPresetChangeEvent,
                                    SyllableEvent,
-                                   ControllerChangeEvent>;
+                                   ControllerChangeEvent,
+                                   PlaybackStateEvent>;
 
 using PlaybackEventList = std::vector<PlaybackEvent>;
 using PlaybackEventsMap = SharedMap<timestamp_t, PlaybackEventList>;

@@ -22,7 +22,11 @@
 
 #pragma once
 
+#include <atomic>
+#include <mutex>
+
 #include "audiosourcenode.h"
+#include "playbackstatetimeline.h"
 
 #include "global/async/asyncable.h"
 #include "global/modularity/ioc.h"
@@ -77,6 +81,13 @@ private:
 
     void doSelfProcess(float* buffer, samples_t samplesPerChannel) override;
 
+    //! NOTE Processes a block under On/Off and Live/Idle markings: applies their gain, and doesn't
+    //! run the synth at all while the instrument is off or idle (see PlaybackStateTimeline)
+    void processWithPlaybackStates(float* buffer, samples_t samplesPerChannel);
+
+    //! NOTE Engine thread: new markings, e.g. after a score change. Picked up by the audio thread
+    void setPlaybackStateTimeline(PlaybackStateTimelinePtr timeline);
+
     void setupSource();
     SynthCtx currentSynthCtx() const;
     void restoreSynthCtx(const SynthCtx& ctx);
@@ -86,6 +97,17 @@ private:
     synth::ISynthesizerPtr m_synth = nullptr;
     AudioInputParams m_params;
     async::Channel<AudioInputParams> m_paramsChanges;
+
+    // Markings
+    PlaybackStateTimelinePtr m_engineTimeline;  // engine thread
+    std::mutex m_timelineMutex;
+    PlaybackStateTimelinePtr m_pendingTimeline; // guarded by m_timelineMutex
+    std::atomic<bool> m_timelineChanged = false;
+    PlaybackStateTimelinePtr m_timeline;        // audio thread
+    bool m_sleeping = false;                    // the synth isn't processed, see processWithPlaybackStates()
+    TimePosition m_sleepPosition;               // where the synth would be now, while sleeping
+    bool m_ringingOut = true;                   // an idle instrument after its note hasn't gone silent yet
+    samples_t m_silentSamples = 0;
 };
 
 using EventAudioNodePtr = std::shared_ptr<EventAudioNode>;

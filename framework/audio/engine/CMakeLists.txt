@@ -87,6 +87,8 @@ else()
         internal/nodes/mixernode.cpp
         internal/nodes/mixernode.h
         internal/nodes/eventaudionode.cpp
+        internal/nodes/playbackstatetimeline.cpp
+        internal/nodes/playbackstatetimeline.h
         internal/nodes/eventaudionode.h
         internal/nodes/fxnode.cpp
         internal/nodes/fxnode.h
