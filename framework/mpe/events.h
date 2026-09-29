@@ -333,11 +333,11 @@ struct SyllableEvent {
 using SyllableEventList = std::vector<SyllableEvent>;
 
 //! NOTE A playback marking in the score that switches an instrument on/off (hard) or between
-//! live/idle (soft) from its timestamp on:
+//! live/standby (soft) from its timestamp on:
 //! - On: plays again after an Off. Live: keeps running even without notes (e.g. drones, noise makers).
 //!   Both are complete at the timestamp: the instrument wakes up `time` earlier and, with a fade,
 //!   fades in over that time.
-//! - Off: silent until the next On, whatever is written. Idle: sleeps while it has nothing to play and
+//! - Off: silent until the next On, whatever is written. Standby (also called idle): sleeps while it has nothing to play and
 //!   wakes up `time` before each note. Both begin at the timestamp: with a fade they fade out over
 //!   `time`, otherwise they stop after it.
 struct PlaybackStateEvent {
@@ -345,7 +345,7 @@ struct PlaybackStateEvent {
         On = 0,
         Off,
         Live,
-        Idle,
+        Standby,
     };
 
     //! NOTE Shape of a fade: Smooth (S-curve, soft at both ends), Linear (in amplitude),

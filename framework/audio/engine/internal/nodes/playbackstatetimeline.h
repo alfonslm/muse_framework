@@ -29,12 +29,12 @@
 #include "mpe/events.h"
 
 namespace muse::audio::engine {
-//! NOTE The On/Off and Live/Idle markings of one track (see mpe::PlaybackStateEvent), prepared for
+//! NOTE The On/Off and Live/Standby markings of one track (see mpe::PlaybackStateEvent), prepared for
 //! the audio thread: the gain they apply at a given time, and whether the instrument has to be
 //! processed at all. Immutable once built, so it can be shared with the audio thread.
 //!
 //! - On/Off (hard): Off silences the instrument until the next On, whatever is written.
-//! - Live/Idle (soft): Live keeps it running; Idle lets it sleep while it has no notes, waking up
+//! - Live/Standby (soft): Live keeps it running; Standby (idle) lets it sleep while it has no notes, waking up
 //!   `time` before each note. Without markings the instrument always runs, as before.
 class PlaybackStateTimeline
 {
@@ -48,11 +48,11 @@ public:
     float gainAt(mpe::timestamp_t t) const;
 
     //! NOTE Whether the block [from; to) has to be processed. False when the instrument is off, or
-    //! idle with no note (or note lead-in) in the block and not still ringing out after a note
+    //! in standby with no note (or note lead-in) in the block and not still ringing out after a note
     bool isAwake(mpe::timestamp_t from, mpe::timestamp_t to, bool ringingOut) const;
 
-    //! NOTE Whether an idle instrument may still be ringing out at time t, i.e. its last note ended
-    //! (after the Idle marking) less than the ring-out limit before t
+    //! NOTE Whether an instrument in standby may still be ringing out at time t, i.e. its last note ended
+    //! (after the Standby marking) less than the ring-out limit before t
     bool mayRingOut(mpe::timestamp_t t) const;
 
     //! NOTE Whether the gain can differ from 1 anywhere in [from; to)
@@ -65,13 +65,13 @@ public:
 private:
     struct Marking {
         mpe::timestamp_t time = 0;   // where the marking is written
-        mpe::timestamp_t anchor = 0; // where it starts to act: time - lead for On/Live, time for Off/Idle
+        mpe::timestamp_t anchor = 0; // where it starts to act: time - lead for On/Live, time for Off/Standby
         mpe::duration_t length = 0;  // the marking's Time
         Type type = Type::On;
         bool fade = true;
         mpe::PlaybackStateEvent::Curve curve = mpe::PlaybackStateEvent::Curve::Smooth;
         float startGain = 1.f;       // gain just before the anchor
-        bool inNoteAtTime = false;   // Idle only: a note is sounding where it's written
+        bool inNoteAtTime = false;   // Standby only: a note is sounding where it's written
     };
 
     struct NoteSpan {
@@ -91,7 +91,7 @@ private:
     std::optional<mpe::timestamp_t> lastNoteEndBefore(mpe::timestamp_t t) const;
 
     std::vector<Marking> m_hard; // On/Off, by anchor
-    std::vector<Marking> m_soft; // Live/Idle, by anchor
+    std::vector<Marking> m_soft; // Live/Standby, by anchor
     std::vector<NoteSpan> m_notes; // merged, sorted
 };
 

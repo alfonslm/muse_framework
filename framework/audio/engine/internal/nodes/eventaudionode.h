@@ -81,8 +81,8 @@ private:
 
     void doSelfProcess(float* buffer, samples_t samplesPerChannel) override;
 
-    //! NOTE Processes a block under On/Off and Live/Idle markings: applies their gain, and doesn't
-    //! run the synth at all while the instrument is off or idle (see PlaybackStateTimeline)
+    //! NOTE Processes a block under On/Off and Live/Standby markings: applies their gain, and doesn't
+    //! run the synth at all while the instrument is off or in standby (see PlaybackStateTimeline)
     void processWithPlaybackStates(float* buffer, samples_t samplesPerChannel);
 
     //! NOTE Engine thread: new markings, e.g. after a score change. Picked up by the audio thread
@@ -106,7 +106,7 @@ private:
     PlaybackStateTimelinePtr m_timeline;        // audio thread
     bool m_sleeping = false;                    // the synth isn't processed, see processWithPlaybackStates()
     TimePosition m_sleepPosition;               // where the synth would be now, while sleeping
-    bool m_ringingOut = true;                   // an idle instrument after its note hasn't gone silent yet
+    bool m_ringingOut = true;                   // an instrument in standby after its note hasn't gone silent yet
     samples_t m_silentSamples = 0;
 };
 

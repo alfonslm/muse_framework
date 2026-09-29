@@ -30,7 +30,7 @@ using namespace muse;
 using namespace muse::mpe;
 using namespace muse::audio::engine;
 
-//! NOTE How long an idle instrument may keep ringing out after its last note before it's put to sleep
+//! NOTE How long an instrument in standby may keep ringing out after its last note before it's put to sleep
 //! even if it isn't silent yet (see EventAudioNode, which also puts it to sleep once it's silent)
 static constexpr duration_t RING_OUT_LIMIT = 10'000'000;
 
@@ -114,8 +114,8 @@ std::shared_ptr<const PlaybackStateTimeline> PlaybackStateTimeline::build(const 
         }
 
         const Marking& prev = timeline->m_soft[i - 1];
-        if (prev.type == Type::Idle) {
-            //! NOTE A Live after an Idle fades in from silence, unless a note keeps the instrument awake there
+        if (prev.type == Type::Standby) {
+            //! NOTE A Live after a Standby fades in from silence, unless a note keeps the instrument awake there
             const bool asleep = m.anchor >= prev.anchor + prev.length && !timeline->hasNoteNear(m.anchor, m.anchor + 1, prev.length);
             m.startGain = asleep ? 0.f : 1.f;
         } else {
@@ -197,7 +197,7 @@ float PlaybackStateTimeline::softGainAt(timestamp_t t) const
         return rampedGain(*m, m->startGain, t);
     }
 
-    //! NOTE Idle: the marking fades out (or cuts) whatever sounds without a note, e.g. a drone. After
+    //! NOTE Standby: the marking fades out (or cuts) whatever sounds without a note, e.g. a drone. After
     //! that the instrument either sleeps or plays its notes, which have their own envelopes
     if (m->inNoteAtTime || t >= m->anchor + m->length) {
         return 1.f;
@@ -242,7 +242,7 @@ bool PlaybackStateTimeline::isAwake(timestamp_t from, timestamp_t to, bool ringi
         return true;
     }
 
-    //! NOTE Still fading out (or waiting to cut) after the Idle marking, or the block starts before it
+    //! NOTE Still fading out (or waiting to cut) after the Standby marking, or the block starts before it
     if (from < m->anchor + m->length) {
         return true;
     }
@@ -257,7 +257,7 @@ bool PlaybackStateTimeline::isAwake(timestamp_t from, timestamp_t to, bool ringi
 bool PlaybackStateTimeline::mayRingOut(timestamp_t t) const
 {
     const Marking* m = lastSoft(t);
-    if (!m || m->type != Type::Idle) {
+    if (!m || m->type != Type::Standby) {
         return false;
     }
 

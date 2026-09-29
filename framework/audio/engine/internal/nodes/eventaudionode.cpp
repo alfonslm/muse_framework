@@ -200,7 +200,7 @@ void EventAudioNode::processWithPlaybackStates(float* buffer, samples_t samplesP
     const timestamp_t from = toUsecs(position.samples());
     const timestamp_t to = toUsecs(position.samples() + samplesPerChannel);
 
-    //! NOTE "needed": the markings or notes require processing; otherwise an idle instrument is
+    //! NOTE "needed": the markings or notes require processing; otherwise an instrument in standby is
     //! only processed while it may still be ringing out after its last note
     const bool needed = !m_timeline || m_timeline->isAwake(from, to, false);
     const bool awake = needed || m_timeline->isAwake(from, to, m_ringingOut);
