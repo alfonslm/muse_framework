@@ -306,6 +306,13 @@ void EventAudioNode::setPlayheadPosition(PlayheadPositionPtr playheadPosition)
     }
 }
 
+bool EventAudioNode::shouldProcessWhenIdle() const
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    return m_enabled && m_synth && m_synth->shouldProcessWhenIdle();
+}
+
 const AudioInputParams& EventAudioNode::inputParams() const
 {
     return m_params;

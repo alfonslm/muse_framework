@@ -51,6 +51,7 @@ public:
     void flush() override;
 
     void setPlayheadPosition(PlayheadPositionPtr playheadPosition) override;
+    bool shouldProcessWhenIdle() const override;
 
     const AudioInputParams& inputParams() const override;
     void applyInputParams(const AudioInputParams& requiredParams) override;

@@ -195,6 +195,11 @@ struct AudioEngineConfig {
     bool autoProcessOnlineSoundsInBackground = false;
     bool isLazyProcessingOfOnlineSoundsEnabled = false;
     bool useSoundFontLowPassFilter = false;
+
+    //! NOTE Don't deactivate plugin instruments when playback stops, and keep processing them.
+    //! A plugin with its own editor and transport (a sequencer, a singing synthesizer) is otherwise
+    //! silent and frozen while the host is stopped
+    bool keepPluginInstrumentsActiveWhenIdle = false;
 };
 
 using AudioSourceName = std::string;

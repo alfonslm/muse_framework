@@ -222,6 +222,10 @@ private:
 
     // -----
     void onShouldProcessDuringSilenceChanged(const TrackId trackId, bool shouldProcess);
+
+    //! NOTE Adds the tracks whose source asks to be processed while idle. An empty set stays empty:
+    //! it means "process every track"
+    std::unordered_set<TrackId> withSourcesToProcessWhenIdle(std::unordered_set<TrackId> trackIds) const;
     TrackId m_prevActiveTrackId = INVALID_TRACK_ID;
     std::unordered_set<TrackId> m_tracksToProcessWhenIdle;
     // -----

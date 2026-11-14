@@ -29,12 +29,15 @@
 #include "global/modularity/ioc.h"
 #include "rcommand/icommandsregister.h"
 #include "../ivstconfiguration.h"
+#include "audio/main/iaudioconfiguration.h"
+#include "async/asyncable.h"
 
 namespace muse::vst {
-class VstCommandsState : public muse::rcommand::IModuleCommandsState, public muse::Contextable
+class VstCommandsState : public muse::rcommand::IModuleCommandsState, public muse::Contextable, public muse::async::Asyncable
 {
     muse::GlobalInject<muse::rcommand::ICommandsRegister> commandsRegister;
     muse::GlobalInject<IVstConfiguration> configuration;
+    muse::GlobalInject<audio::IAudioConfiguration> audioConfiguration;
 
 public:
     VstCommandsState(const muse::modularity::ContextPtr& ctx)

@@ -62,6 +62,7 @@ public:
     muse::audio::TimePosition playbackPosition() const override;
     void setPlaybackPosition(const muse::audio::TimePosition& position) override;
     void setPlayheadPosition(audio::engine::PlayheadPositionPtr playheadPosition) override;
+    bool shouldProcessWhenIdle() const override;
 
     void setOutputSpec(const audio::OutputSpec& spec) override;
     muse::audio::samples_t process(float* buffer, muse::audio::samples_t samplesPerChannel) override;

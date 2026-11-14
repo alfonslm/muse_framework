@@ -43,6 +43,9 @@ public:
     bool useSoundFontLowPassFilter() const override;
     async::Channel<bool> useSoundFontLowPassFilterChanged() const override;
 
+    bool keepPluginInstrumentsActiveWhenIdle() const override;
+    async::Channel<bool> keepPluginInstrumentsActiveWhenIdleChanged() const override;
+
     AudioInputParams defaultAudioInputParams() const override;
 
 private:
@@ -52,5 +55,6 @@ private:
     async::Channel<bool> m_autoProcessOnlineSoundsInBackgroundChanged;
     async::Channel<bool> m_isLazyProcessingOfOnlineSoundsEnabledChanged;
     async::Channel<bool> m_useSoundFontLowPassFilterChanged;
+    async::Channel<bool> m_keepPluginInstrumentsActiveWhenIdleChanged;
 };
 }

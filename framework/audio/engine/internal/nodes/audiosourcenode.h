@@ -51,6 +51,9 @@ public:
 
     virtual void setPlayheadPosition(PlayheadPositionPtr) {}
 
+    //! NOTE Whether the source wants to be processed while playback is stopped (see ISynthesizer)
+    virtual bool shouldProcessWhenIdle() const { return false; }
+
     virtual const AudioInputParams& inputParams() const = 0;
     virtual void applyInputParams(const AudioInputParams& requiredParams) = 0;
     virtual async::Channel<AudioInputParams> inputParamsChanged() const = 0;
