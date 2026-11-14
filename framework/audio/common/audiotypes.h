@@ -172,14 +172,24 @@ struct SoundTrackFormat {
     }
 };
 
-//! NOTE One destination file for a single-instrument/single-track "stem" export, i.e. exporting
-//! more than one audio file (typically one per instrument/part) from a single render pass.
+//! NOTE One destination file of a multi-file export (typically one file per part). The file gets
+//! the mix of its own tracks run through its own copy of the aux and master buses, i.e. the same
+//! result as exporting it on its own with every other track muted.
 struct SoundTrackTarget {
-    TrackId trackId = -1;
+    TrackIdList trackIds;
     io::IODevice* dstDevice = nullptr;
 };
 
 using SoundTrackTargetList = std::vector<SoundTrackTarget>;
+
+//! NOTE Options of a multi-file export (saveSoundTracks)
+struct SoundTracksExportOptions {
+    //! NOTE Don't process a track until shortly before its first note, since it's silent until then.
+    //! Only instruments that make sound without notes (e.g. drones, noise generators) are affected
+    bool idleUntilFirstNote = true;
+
+    bool operator==(const SoundTracksExportOptions& other) const { return idleUntilFirstNote == other.idleUntilFirstNote; }
+};
 
 struct AudioEngineConfig {
     bool autoProcessOnlineSoundsInBackground = false;
@@ -655,6 +665,8 @@ enum SaveSoundTrackStage {
     Unknown = 0,
     ProcessingOnlineSounds,
     WritingSoundTrack,
+    LoadingEffects,        //! A multi-file export waits for its copies of the aux effects to load (current/total unused)
+    WritingSoundTrackFile, //! Progress of one file of a multi-file export: current = percent [0; 100], total = file index
 };
 
 using SaveSoundTrackProgress = async::Channel<int64_t /*current*/, int64_t /*total*/, SaveSoundTrackStage>;

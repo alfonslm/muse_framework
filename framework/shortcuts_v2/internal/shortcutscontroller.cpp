@@ -48,18 +48,15 @@ void ShortcutsController::activate(const std::string& sequence)
         return;
     }
 
-    LOGD() << sequence;
-
     ShortcutList allowedShortcuts;
     const ShortcutList& commandShortcuts = commandShortcutsRegister()->shortcutsForSequence(sequence);
-    SC_LOG() << "commandShortcuts: " << commandShortcuts.size();
+    SC_LOG() << sequence << ": commandShortcuts: " << commandShortcuts.size() << ": " << commandShortcuts;
     for (const Shortcut& sc : commandShortcuts) {
-        const Command& command = Command(sc.command);
-        if (commandsState()->commandState(command).enabled) {
+        if (commandsState()->commandState(sc.command).enabled) {
             allowedShortcuts.push_back(sc);
         }
     }
-    SC_LOG() << "allowedShortcuts: " << allowedShortcuts.size();
+    SC_LOG() << sequence << ": allowedShortcuts: " << allowedShortcuts.size() << ": " << allowedShortcuts;
 
     Shortcut selectedShortcut;
     if (allowedShortcuts.size() == 1) {
@@ -73,7 +70,7 @@ void ShortcutsController::activate(const std::string& sequence)
     }
     SC_LOG() << "selectedShortcut: " << selectedShortcut.command;
     if (selectedShortcut.isValid()) {
-        commandDispatcher()->dispatch(Command(selectedShortcut.command));
+        commandDispatcher()->dispatch(selectedShortcut.command);
     }
 }
 
