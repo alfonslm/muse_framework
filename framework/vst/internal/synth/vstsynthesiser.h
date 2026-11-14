@@ -68,6 +68,7 @@ public:
 private:
 
     void toggleVolumeGain(const bool isActive);
+    void applyKeyswitchMap();
 
     IVstPluginInstancePtr m_pluginPtr = nullptr;
     std::unique_ptr<VstAudioClient> m_vstAudioClient = nullptr;

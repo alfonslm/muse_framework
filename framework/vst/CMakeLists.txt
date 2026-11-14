@@ -65,6 +65,10 @@ target_sources(muse_vst PRIVATE
     internal/synth/vstiresolver.h
     internal/synth/vstsequencer.cpp
     internal/synth/vstsequencer.h
+    internal/synth/keyswitchmap.cpp
+    internal/synth/keyswitchmap.h
+    internal/synth/keyswitchmapregistry.cpp
+    internal/synth/keyswitchmapregistry.h
 
     internal/fx/vstfxprocessor.cpp
     internal/fx/vstfxprocessor.h
@@ -73,6 +77,13 @@ target_sources(muse_vst PRIVATE
 
     widgets/vstviewdialog_qwidget.cpp
     widgets/vstviewdialog_qwidget.h
+)
+
+qt_add_resources(muse_vst muse_vst_keyswitch_resources
+    PREFIX
+        /vst
+    FILES
+        "resources/keyswitch/Default Example.json"
 )
 
 target_link_libraries(muse_vst PRIVATE vst3sdk)

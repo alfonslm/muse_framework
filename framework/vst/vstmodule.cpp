@@ -41,6 +41,7 @@
 #include "internal/vstactionscontroller.h"
 #include "internal/vstcommandsregister.h"
 #include "internal/vstcommandsstate.h"
+#include "internal/synth/keyswitchmapregistry.h"
 
 using namespace muse::vst;
 using namespace muse::modularity;
@@ -95,10 +96,14 @@ void VSTModule::resolveImports()
     }
 }
 
-void VSTModule::onInit(const IApplication::RunMode&)
+void VSTModule::onInit(const IApplication::RunMode& mode)
 {
     m_configuration->init();
     m_pluginModulesRepo->init();
+
+    if (mode == IApplication::RunMode::GuiApp) {
+        KeyswitchMapRegistry::instance().ensureDefaultMapExists();
+    }
 }
 
 void VSTModule::onDeinit()
