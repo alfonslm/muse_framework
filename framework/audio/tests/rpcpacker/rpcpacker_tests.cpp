@@ -708,6 +708,8 @@ TEST_F(Audio_RpcPackerTests, MPE_ExpressionContext)
 // void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::SyllableEvent& value);
 // void pack_custom(muse::msgpack::Packer& p, const muse::mpe::ControllerChangeEvent& value);
 // void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::ControllerChangeEvent& value);
+// void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackStateEvent& value);
+// void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackStateEvent& value);
 // void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackEvent& value);
 // void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackEvent& value);
 
@@ -826,13 +828,41 @@ TEST_F(Audio_RpcPackerTests, MPE_PlaybackEvent)
         EXPECT_TRUE(origin == unpacked);
     }
 
+    // PlaybackStateEvent
+    {
+        mpe::PlaybackStateEvent event;
+        event.type = mpe::PlaybackStateEvent::Type::Standby;
+        event.time = 250000;
+        event.fade = false;
+        event.curve = mpe::PlaybackStateEvent::Curve::Audio;
+        event.layerIdx = 4;
+
+        KNOWN_FIELDS(event,
+                     event.type,
+                     event.time,
+                     event.fade,
+                     event.curve,
+                     event.layerIdx);
+
+        mpe::PlaybackEvent origin = event;
+
+        ByteArray data = rpc::RpcPacker::pack(origin);
+
+        mpe::PlaybackEvent unpacked;
+        bool ok = rpc::RpcPacker::unpack(data, unpacked);
+
+        EXPECT_TRUE(ok);
+        EXPECT_TRUE(origin == unpacked);
+    }
+
     {
         using KnownPlaybackEvent = std::variant<std::monostate,
                                                 mpe::NoteEvent,
                                                 mpe::TextArticulationEvent,
                                                 mpe::SoundPresetChangeEvent,
                                                 mpe::SyllableEvent,
-                                                mpe::ControllerChangeEvent>;
+                                                mpe::ControllerChangeEvent,
+                                                mpe::PlaybackStateEvent>;
 
         static_assert(std::is_same<mpe::PlaybackEvent, KnownPlaybackEvent>::value);
     }
