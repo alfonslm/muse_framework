@@ -212,8 +212,8 @@ void EngineRpcController::init()
                 m_execOperation->execOperation(OperationType::QuickOperation, func);
             };
 
-            channel()->addReceiveStream(StreamName::PlaybackDataMainStream, mainStreamId, playbackData.mainStream, mainExec);
-            channel()->addReceiveStream(StreamName::PlaybackDataOffStream, offStreamId, playbackData.offStream, offExec);
+            channel()->addReceiveStream(msg.ctxId, StreamName::PlaybackDataMainStream, mainStreamId, playbackData.mainStream, mainExec);
+            channel()->addReceiveStream(msg.ctxId, StreamName::PlaybackDataOffStream, offStreamId, playbackData.offStream, offExec);
 
             auto addTrackAndSendResponse = [this](const Msg& msg, const TrackName& trackName,
                                                   const mpe::PlaybackData& playbackData, const TrackParams& params) {
@@ -349,6 +349,7 @@ void EngineRpcController::init()
         });
 
         acontext->trackRemoved().onReceive(this, [this, ctxId](TrackId trackId) {
+            removeTrackStreams(ctxId, trackId);
             channel()->send(rpc::make_notification(ctxId, MsgCode::TrackRemoved, RpcPacker::pack(trackId)));
         });
 
@@ -505,7 +506,8 @@ void EngineRpcController::init()
                 RetVal<InputProcessingProgress> ret = actx->inputProcessingProgress(trackId);
                 StreamId streamId = 0;
                 if (ret.ret) {
-                    streamId = channel()->addSendStream(StreamName::InputProcessingProgressStream, ret.val.processedChannel);
+                    streamId = channel()->addSendStream(msg.ctxId, StreamName::InputProcessingProgressStream, ret.val.processedChannel);
+                    addTrackStream(msg.ctxId, trackId, streamId);
                 }
                 return make_response(msg, RpcPacker::pack(ret.ret, ret.val.isStarted, streamId));
             } else {
@@ -570,7 +572,8 @@ void EngineRpcController::init()
                 RetVal<AudioSignalChanges> ret = audioContext(msg.ctxId)->signalChanges(trackId);
                 StreamId streamId = 0;
                 if (ret.ret) {
-                    streamId = channel()->addSendStream(StreamName::AudioSignalStream, ret.val);
+                    streamId = channel()->addSendStream(msg.ctxId, StreamName::AudioSignalStream, ret.val);
+                    addTrackStream(msg.ctxId, trackId, streamId);
                 }
 
                 RetVal<StreamId> res;
@@ -593,7 +596,8 @@ void EngineRpcController::init()
                 RetVal<AutomatedControlParamsChanges> ret = audioContext(msg.ctxId)->automatedControlParamsChanges(trackId);
                 StreamId streamId = 0;
                 if (ret.ret) {
-                    streamId = channel()->addSendStream(StreamName::AutomatedControlParamsStream, ret.val);
+                    streamId = channel()->addSendStream(msg.ctxId, StreamName::AutomatedControlParamsStream, ret.val);
+                    addTrackStream(msg.ctxId, trackId, streamId);
                 }
 
                 RetVal<StreamId> res;
@@ -741,7 +745,7 @@ void EngineRpcController::init()
             if (auto actx = audioContext(msg.ctxId)) {
                 PlaybackStatus status = actx->playbackStatus();
                 async::Channel<PlaybackStatus> ch = actx->playbackStatusChanged();
-                StreamId streamId = channel()->addSendStream(StreamName::PlaybackStatusStream, ch);
+                StreamId streamId = channel()->addSendStream(msg.ctxId, StreamName::PlaybackStatusStream, ch);
                 return make_response(msg, RpcPacker::pack(make_ok(), status, streamId));
             } else {
                 return make_response(msg, RpcPacker::pack(make_ret(Err::InvalidContext), PlaybackStatus::Stopped, 0));
@@ -754,7 +758,7 @@ void EngineRpcController::init()
             if (auto actx = audioContext(msg.ctxId)) {
                 secs_t pos = actx->playbackPosition();
                 async::Channel<secs_t> ch = actx->playbackPositionChanged();
-                StreamId streamId = channel()->addSendStream(StreamName::PlaybackPositionStream, ch);
+                StreamId streamId = channel()->addSendStream(msg.ctxId, StreamName::PlaybackPositionStream, ch);
                 return make_response(msg, RpcPacker::pack(make_ok(), pos, streamId));
             } else {
                 return make_response(msg, RpcPacker::pack(make_ret(Err::InvalidContext), 0, 0));
@@ -773,6 +777,49 @@ void EngineRpcController::init()
             io::IODevice& dstDevice = *reinterpret_cast<io::IODevice*>(dstDevicePtr);
             if (auto actx = audioContext(msg.ctxId)) {
                 actx->saveSoundTrack(dstDevice, format).onResolve(this, [this, msg](const Ret& ret) {
+                    channel()->send(make_response_ret(msg, ret));
+                });
+                return make_response_delayed(msg);
+            } else {
+                return make_response_ret(msg, make_ret(Err::InvalidContext));
+            }
+        });
+
+        onLongRequest(ctxId, MsgCode::SaveSoundTracks, [this](const Msg& msg) {
+            ONLY_AUDIO_RPC_THREAD;
+            SoundTrackFormat format;
+            std::vector<TrackId> trackIds;
+            std::vector<uint64_t> trackCounts;
+            std::vector<uint64_t> dstDevicePtrs;
+            SoundTracksExportOptions options;
+            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, format, trackIds, trackCounts, dstDevicePtrs, options.idleUntilFirstNote)) {
+                return make_response_ret(msg, make_ret(Err::InvalidRpcData));
+            }
+            IF_ASSERT_FAILED(trackCounts.size() == dstDevicePtrs.size()) {
+                return make_response_ret(msg, make_ret(Err::InvalidRpcData));
+            }
+
+            SoundTrackTargetList targets;
+            targets.reserve(dstDevicePtrs.size());
+            size_t offset = 0;
+            for (size_t i = 0; i < dstDevicePtrs.size(); ++i) {
+                IF_ASSERT_FAILED(offset <= trackIds.size() && trackCounts.at(i) <= trackIds.size() - offset) {
+                    return make_response_ret(msg, make_ret(Err::InvalidRpcData));
+                }
+                const size_t count = static_cast<size_t>(trackCounts.at(i));
+
+                SoundTrackTarget target;
+                target.trackIds.assign(trackIds.cbegin() + offset, trackIds.cbegin() + offset + count);
+                target.dstDevice = reinterpret_cast<io::IODevice*>(dstDevicePtrs.at(i));
+                targets.push_back(std::move(target));
+                offset += count;
+            }
+            IF_ASSERT_FAILED(offset == trackIds.size()) {
+                return make_response_ret(msg, make_ret(Err::InvalidRpcData));
+            }
+
+            if (auto actx = audioContext(msg.ctxId)) {
+                actx->saveSoundTracks(targets, format, options).onResolve(this, [this, msg](const Ret& ret) {
                     channel()->send(make_response_ret(msg, ret));
                 });
                 return make_response_delayed(msg);
@@ -801,7 +848,7 @@ void EngineRpcController::init()
                 });
 
                 if (m_saveSoundTrackProgressStreamId == 0) {
-                    m_saveSoundTrackProgressStreamId = channel()->addSendStream(StreamName::SaveSoundTrackProgressStream,
+                    m_saveSoundTrackProgressStreamId = channel()->addSendStream(GLOBAL_CTX_ID, StreamName::SaveSoundTrackProgressStream,
                                                                                 m_saveSoundTrackProgressStream);
                 }
 
@@ -833,10 +880,37 @@ void EngineRpcController::init()
         audioContext->sourceParamsChanged().disconnect(this);
         audioContext->fxChainParamsChanged().disconnect(this);
 
+        channel()->cancelAllRequests(ctxId);
+        m_trackStreams.erase(ctxId);
+
         audioEngine()->destroyContext(ctxId);
 
         return make_response_ret(msg, make_ok());
     });
+}
+
+void EngineRpcController::addTrackStream(rpc::CtxId ctxId, TrackId trackId, rpc::StreamId streamId)
+{
+    m_trackStreams[ctxId][trackId].push_back(streamId);
+}
+
+void EngineRpcController::removeTrackStreams(rpc::CtxId ctxId, TrackId trackId)
+{
+    auto ctxIt = m_trackStreams.find(ctxId);
+    if (ctxIt == m_trackStreams.end()) {
+        return;
+    }
+
+    auto trackIt = ctxIt->second.find(trackId);
+    if (trackIt == ctxIt->second.end()) {
+        return;
+    }
+
+    for (StreamId streamId : trackIt->second) {
+        channel()->removeStream(streamId);
+    }
+
+    ctxIt->second.erase(trackIt);
 }
 
 void EngineRpcController::onLongRequest(rpc::CtxId ctxId, rpc::MsgCode code, const RequestHandler& h)

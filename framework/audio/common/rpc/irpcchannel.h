@@ -125,6 +125,7 @@ enum class MsgCode {
 
     // Export
     SaveSoundTrack,
+    SaveSoundTracks,
     AbortSavingAllSoundTracks,
     GetSaveSoundTrackProgress,
 
@@ -225,6 +226,7 @@ inline std::string to_string(MsgCode m)
     case MsgCode::GetAutomatedControlParamsChanges: return "GetAutomatedControlParamsChanges";
 
     case MsgCode::SaveSoundTrack: return "SaveSoundTrack";
+    case MsgCode::SaveSoundTracks: return "SaveSoundTracks";
     case MsgCode::AbortSavingAllSoundTracks: return "AbortSavingAllSoundTracks";
     case MsgCode::GetSaveSoundTrackProgress: return "GetSaveSoundTrackProgress";
 
@@ -405,23 +407,27 @@ public:
     virtual void process() = 0;
 
     virtual void send(const Msg& msg, const ResponseHandler& onResponse = nullptr) = 0;
+    virtual void cancelAllRequests(CtxId ctxId) = 0;
     virtual void onRequest(CtxId ctxId, MsgCode code, RequestHandler h) = 0;
     virtual void onNotification(CtxId ctxId, MsgCode code, NotificationHandler h) = 0;
 
     // stream (async/channel)
     template<typename ... Types>
-    StreamId addSendStream(StreamName name, const async::Channel<Types...>& ch)
+    StreamId addSendStream(CtxId ctxId, StreamName name, const async::Channel<Types...>& ch)
     {
         StreamId id = new_stream_id();
         auto s = new RpcStream<Types...>(this, name, id, StreamType::Send, ch, nullptr);
+        s->setCtxId(ctxId);
         addStream(std::shared_ptr<IRpcStream>(s));
         return id;
     }
 
     template<typename ... Types>
-    void addReceiveStream(StreamName name, rpc::StreamId id, const async::Channel<Types...>& ch, const RpcStreamExec& exec = nullptr)
+    void addReceiveStream(CtxId ctxId, StreamName name, rpc::StreamId id, const async::Channel<Types...>& ch,
+                          const RpcStreamExec& exec = nullptr)
     {
         auto s = new RpcStream<Types...>(this, name, id, StreamType::Receive, ch, exec);
+        s->setCtxId(ctxId);
         addStream(std::shared_ptr<IRpcStream>(s));
     }
 };

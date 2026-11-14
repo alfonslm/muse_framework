@@ -69,7 +69,7 @@ public:
 private:
 
     void toggleVolumeGain(const bool isActive);
-    audio::samples_t processSequence(const VstSequencer::EventSequence& sequence, const audio::samples_t samples, float* buffer);
+    void applyKeyswitchMap();
 
     IVstPluginInstancePtr m_pluginPtr = nullptr;
     std::unique_ptr<VstAudioClient> m_vstAudioClient = nullptr;

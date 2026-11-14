@@ -21,6 +21,9 @@
  */
 #pragma once
 
+#include <utility>
+#include <vector>
+
 #include "../ivstplugininstance.h"
 #include "../vsttypes.h"
 
@@ -44,6 +47,11 @@ public:
 
     void setIsActive(const bool isActive);
     void setIsPlaying(const bool isPlaying);
+
+    //! NOTE While offline (export), transport events requested by the plugin are dropped: they only
+    //! make sense for live playback, and forwarding them from an export worker thread would need
+    //! that thread to register with the engine's message queue while the engine is blocked on it.
+    void setIsOffline(const bool isOffline);
     void setOutputSpec(const audio::OutputSpec& spec);
     void setProcessMode(VstProcessMode mode);
     void setVolumeGain(const muse::audio::gain_t newVolumeGain);
@@ -53,8 +61,15 @@ public:
 
     void flushSound();
 
+    //! NOTE Volume gain changes within one process() call: {sample offset in the call, new gain}, sorted by offset.
+    //! The volume gain is applied to the plugin's output by us, not by the plugin, so a gain change doesn't
+    //! need its own plugin process() call. After the call, the volume gain is the last gain of the list
+    using VolumeGainChanges = std::vector<std::pair<audio::samples_t, audio::gain_t> >;
+
+    //! NOTE musicalPosition: tempo, time signature and bar/beat at the start of the call, if known
     audio::samples_t process(float* output, audio::samples_t samplesPerChannel, audio::samples_t playbackPositionSamples = 0,
-                             const audio::MusicalPosition& musicalPosition = audio::MusicalPosition());
+                             const audio::MusicalPosition& musicalPosition = audio::MusicalPosition(),
+                             const VolumeGainChanges& volumeGainChanges = VolumeGainChanges());
 
     ParamsMapping paramsMapping(const std::set<Steinberg::Vst::CtrlNumber>& controllers) const;
 
@@ -67,7 +82,7 @@ private:
     void updateProcessSetup();
     void extractInputSamples(muse::audio::samples_t sampleCount, const float* sourceBuffer);
 
-    void fillOutputBufferInstrument(muse::audio::samples_t sampleCount, float* output);
+    void fillOutputBufferInstrument(muse::audio::samples_t sampleCount, float* output, const VolumeGainChanges& volumeGainChanges);
     void fillOutputBufferFx(muse::audio::samples_t sampleCount, float* output);
 
     void processOutputEvents();
@@ -80,6 +95,7 @@ private:
     void addParamChange(const ParamChangeEvent& param);
 
     bool m_isActive = false;
+    bool m_isOffline = false;
     muse::audio::gain_t m_volumeGain = 1.f; // 0.0 - 1.0
 
     IVstPluginInstancePtr m_pluginPtr = nullptr;

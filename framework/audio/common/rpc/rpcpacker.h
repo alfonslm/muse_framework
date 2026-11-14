@@ -131,6 +131,8 @@ void pack_custom(muse::msgpack::Packer& p, const muse::mpe::SyllableEvent& value
 void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::SyllableEvent& value);
 void pack_custom(muse::msgpack::Packer& p, const muse::mpe::ControllerChangeEvent& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::ControllerChangeEvent& value);
+void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackStateEvent& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackStateEvent& value);
 void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackEvent& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackEvent& value);
 
@@ -630,6 +632,20 @@ inline void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::ControllerChang
     value.type = static_cast<muse::mpe::ControllerChangeEvent::Type>(type);
 }
 
+inline void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackStateEvent& value)
+{
+    p.process(static_cast<uint8_t>(value.type), value.time, value.fade, static_cast<uint8_t>(value.curve), value.layerIdx);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackStateEvent& value)
+{
+    uint8_t type = 0;
+    uint8_t curve = 0;
+    p.process(type, value.time, value.fade, curve, value.layerIdx);
+    value.type = static_cast<muse::mpe::PlaybackStateEvent::Type>(type);
+    value.curve = static_cast<muse::mpe::PlaybackStateEvent::Curve>(curve);
+}
+
 inline void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackEvent& value)
 {
     uint8_t idx = static_cast<uint8_t>(value.index());
@@ -657,6 +673,10 @@ inline void pack_custom(muse::msgpack::Packer& p, const muse::mpe::PlaybackEvent
     } break;
     case 5: {
         const muse::mpe::ControllerChangeEvent& event = std::get<muse::mpe::ControllerChangeEvent>(value);
+        p.process(event);
+    } break;
+    case 6: {
+        const muse::mpe::PlaybackStateEvent& event = std::get<muse::mpe::PlaybackStateEvent>(value);
         p.process(event);
     } break;
     default: {
@@ -696,6 +716,11 @@ inline void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackEvent& 
     } break;
     case 5: {
         muse::mpe::ControllerChangeEvent event;
+        p.process(event);
+        value = event;
+    } break;
+    case 6: {
+        muse::mpe::PlaybackStateEvent event;
         p.process(event);
         value = event;
     } break;

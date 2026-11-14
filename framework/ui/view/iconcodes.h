@@ -341,6 +341,8 @@ enum class Code : char16_t {
     LOOP_OUT = 0xF3C8,
     PAUSE = 0xF3C9,
 
+    ERASER = 0xF3CC,
+
     WARNING = 0xF3CE,
     INFO = 0xF3CF,
     ERROR = 0xF3D0,
@@ -556,6 +558,9 @@ enum class Code : char16_t {
     WARNING_FILLED = 0xF4C8,
 
     INFO_FILLED = 0xF4CC,
+
+    FADE_HANDLE_IN = 0xF4CD,
+    FADE_HANDLE_OUT = 0xF4CE,
 
     NONE = 0xFFFF
 };

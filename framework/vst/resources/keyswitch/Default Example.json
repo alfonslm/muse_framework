@@ -1,0 +1,88 @@
+{
+    "_readme": "Template map: every field and articulation/technique name the engine understands, pre-filled so you can just duplicate this file, rename it, and edit/delete lines rather than looking up spelling or syntax. Keyswitch values are a MIDI note (0-127) or \"note|velocity\" (both forms shown below). Delete any entry you don't need -- unmapped notes fall back to 'default'.",
+
+    "default": "Standard",
+    "leadMs": 5,
+    "writeEveryNote": false,
+    "priority": ["Staccato", "Staccatissimo", "Marcato", "Accent", "SoftAccent", "Tenuto"],
+
+    "keyswitches": {
+        "Standard": 0,
+        "Staccato": 1,
+        "Staccatissimo": 2,
+        "Tenuto": 3,
+        "Marcato": 4,
+        "Accent": 5,
+        "SoftAccent": 6,
+
+        "LaissezVibrer": 7,
+        "Subito": 8,
+
+        "FadeIn": 9,
+        "FadeOut": 10,
+        "VolumeSwell": 11,
+
+        "Harmonic": 12,
+        "JazzTone": 13,
+        "PalmMute": 14,
+        "Mute": 15,
+        "Open": 16,
+
+        "Pizzicato": 17,
+        "SnapPizzicato": 18,
+        "RandomPizzicato": 19,
+
+        "UpBow": 20,
+        "DownBow": 21,
+        "Detache": 22,
+        "Martele": 23,
+        "Jete": 24,
+        "ColLegno": 25,
+        "SulPont": 26,
+        "SulTasto": 27,
+
+        "GhostNote": 28,
+
+        "Fall": "29|100",
+        "QuickFall": 30,
+        "Doit": "31|100",
+        "Plop": 32,
+        "Scoop": 33,
+        "BrassBend": 34,
+        "SlideOutDown": 35,
+        "SlideOutUp": 36,
+        "SlideInAbove": 37,
+        "SlideInBelow": 38,
+
+        "Vibrato": 39,
+        "WideVibrato": 40,
+        "MoltoVibrato": 41,
+        "SenzaVibrato": 42,
+
+        "Tremolo8th": 43,
+        "Tremolo16th": 44,
+        "Tremolo32nd": 45,
+        "Tremolo64th": 46,
+        "TremoloBuzz": 47,
+        "TremoloBar": 48,
+
+        "Trill": 49,
+        "TrillBaroque": 50,
+
+        "Distortion": 51,
+        "Overdrive": 52,
+        "Slap": 53,
+        "Pop": 54,
+
+        "LeftHandTapping": 55,
+        "RightHandTapping": 56,
+
+        "ContinuousGlissando": 57,
+        "DiscreteGlissando": 58,
+
+        "Breath": 59,
+
+        "Legato": 60,
+        "Pedal": 61
+    }
+}
