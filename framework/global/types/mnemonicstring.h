@@ -36,6 +36,9 @@ public:
     MnemonicString(const TranslatableString& raw)
         : m_raw(raw) {}
 
+    MnemonicString(const char* context, const char* str, const char* disambiguation = nullptr, int n = -1)
+        : m_raw(context, str, disambiguation, n) {}
+
     inline bool isEmpty() const
     {
         return m_raw.isEmpty();
@@ -55,6 +58,8 @@ public:
     QString qTranslatedWithMnemonicUnderline() const;
 
     QString qTranslatedWithoutMnemonic() const;
+
+    QString qTranslatedPlain() const;
 #endif
 
     inline bool operator ==(const MnemonicString& other) const

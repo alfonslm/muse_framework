@@ -21,6 +21,9 @@
  */
 #include "vstsynthesiser.h"
 
+#include <algorithm>
+
+#include "keyswitchmapregistry.h"
 #include "log.h"
 
 using namespace muse;
@@ -66,6 +69,7 @@ void VstSynthesiser::init(const OutputSpec& spec)
         m_vstAudioClient->setOutputSpec(m_outputSpec);
         m_vstAudioClient->loadSupportedParams();
         m_sequencer.init(m_vstAudioClient->paramsMapping(SUPPORTED_CONTROLLERS), m_useDynamicEvents);
+        applyKeyswitchMap();
         m_inited = true;
     };
 
@@ -87,6 +91,24 @@ void VstSynthesiser::init(const OutputSpec& spec)
     m_sequencer.setOnOffStreamFlushed([this]() {
         m_vstAudioClient->flushSound();
     });
+}
+
+void VstSynthesiser::applyKeyswitchMap()
+{
+    static const std::string KEYSWITCH_MAP_ID_KEY = "keyswitchMapId";
+
+    auto it = m_params.configuration.find(KEYSWITCH_MAP_ID_KEY);
+    if (it == m_params.configuration.cend() || it->second.empty()) {
+        return;
+    }
+
+    const KeyswitchMap* map = KeyswitchMapRegistry::instance().mapById(it->second);
+    if (!map) {
+        LOGW() << "Keyswitch map '" << it->second << "' not found for track " << m_trackId;
+        return;
+    }
+
+    m_sequencer.setKeyswitchMap(map);
 }
 
 void VstSynthesiser::toggleVolumeGain(const bool isActive)
@@ -158,6 +180,8 @@ void VstSynthesiser::setMode(const muse::audio::ProcessMode mode)
     m_vstAudioClient->setIsPlaying(isActive);
     m_vstAudioClient->setIsActive(isActive);
 
+    m_vstAudioClient->setIsOffline(mode == ProcessMode::PlayingOffline);
+
     if (mode == ProcessMode::PlayingOffline) {
         m_vstAudioClient->setProcessMode(VstProcessMode::kOffline);
     } else {
@@ -206,8 +230,32 @@ samples_t VstSynthesiser::process(float* buffer, samples_t samplesPerChannel)
     const VstSequencer::EventSequenceMap sequences = m_sequencer.movePlaybackForward(nextMsecs);
     const bool active = m_sequencer.isActive();
 
+    //! NOTE Events that go into the plugin (notes, parameter changes) take effect at the start of a plugin
+    //! process() call, so the block is split at them. Volume gain changes don't: we apply the gain to the
+    //! plugin's output ourselves, so they're passed along with the call at their sample offset instead.
+    //! Dynamics curves (e.g. hairpins) produce a gain change every few tens of milliseconds, and splitting
+    //! at each of them multiplies the number of plugin calls, which is expensive for heavy instruments.
+    samples_t segmentStart = 0;
     samples_t sampleOffset = 0;
     samples_t processedSamples = 0;
+    VstAudioClient::VolumeGainChanges volumeGainChanges;
+
+    auto processSegment = [&](samples_t segmentEnd) {
+        if (segmentEnd > segmentStart) {
+            const samples_t segmentSamples = segmentEnd - segmentStart;
+            processedSamples += m_vstAudioClient->process(buffer + segmentStart * m_outputSpec.audioChannelCount, segmentSamples,
+                                                          m_currentPosition.samples(), volumeGainChanges);
+
+            if (active) {
+                m_currentPosition.forward(segmentSamples);
+            }
+        } else if (!volumeGainChanges.empty()) {
+            m_vstAudioClient->setVolumeGain(volumeGainChanges.back().second);
+        }
+
+        volumeGainChanges.clear();
+        segmentStart = segmentEnd;
+    };
 
     for (auto it = sequences.cbegin(); it != sequences.cend(); ++it) {
         samples_t durationInSamples = samplesPerChannel - sampleOffset;
@@ -222,33 +270,28 @@ samples_t VstSynthesiser::process(float* buffer, samples_t samplesPerChannel)
             break;
         }
 
-        processedSamples += processSequence(it->second, durationInSamples, buffer + sampleOffset * m_outputSpec.audioChannelCount);
-        sampleOffset += durationInSamples;
+        const bool hasPluginEvents = std::any_of(it->second.cbegin(), it->second.cend(), [](const VstSequencer::EventType& event) {
+            return !std::holds_alternative<muse::audio::gain_t>(event);
+        });
 
-        if (active) {
-            m_currentPosition.forward(durationInSamples);
+        if (hasPluginEvents) {
+            processSegment(sampleOffset);
         }
+
+        for (const VstSequencer::EventType& event : it->second) {
+            if (std::holds_alternative<VstEvent>(event)) {
+                m_vstAudioClient->handleEvent(std::get<VstEvent>(event));
+            } else if (std::holds_alternative<ParamChangeEvent>(event)) {
+                m_vstAudioClient->handleParamChange(std::get<ParamChangeEvent>(event));
+            } else {
+                volumeGainChanges.emplace_back(sampleOffset - segmentStart, std::get<muse::audio::gain_t>(event));
+            }
+        }
+
+        sampleOffset += durationInSamples;
     }
+
+    processSegment(sampleOffset);
 
     return processedSamples;
-}
-
-samples_t VstSynthesiser::processSequence(const VstSequencer::EventSequence& sequence, const samples_t samples, float* buffer)
-{
-    for (const VstSequencer::EventType& event : sequence) {
-        if (std::holds_alternative<VstEvent>(event)) {
-            m_vstAudioClient->handleEvent(std::get<VstEvent>(event));
-        } else if (std::holds_alternative<ParamChangeEvent>(event)) {
-            m_vstAudioClient->handleParamChange(std::get<ParamChangeEvent>(event));
-        } else {
-            muse::audio::gain_t newGain = std::get<muse::audio::gain_t>(event);
-            m_vstAudioClient->setVolumeGain(newGain);
-        }
-    }
-
-    if (samples == 0) {
-        return 0;
-    }
-
-    return m_vstAudioClient->process(buffer, samples, m_currentPosition.samples());
 }
