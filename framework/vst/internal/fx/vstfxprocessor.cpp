@@ -120,11 +120,24 @@ bool VstFxProcessor::shouldProcessDuringSilence() const
     return m_params.active && muse::contains(m_params.categories, AudioFxCategory::FxGenerator);
 }
 
+void VstFxProcessor::setPlayheadPosition(audio::engine::PlayheadPositionPtr playheadPosition)
+{
+    m_playheadPosition = playheadPosition;
+}
+
 void VstFxProcessor::process(float* buffer, samples_t sampleCount, samples_t playbackPositionSamples)
 {
     if (!buffer || !m_inited) {
         return;
     }
 
-    m_vstAudioClient->process(buffer, sampleCount, playbackPositionSamples);
+    audio::MusicalPosition musicalPosition;
+    if (m_playheadPosition) {
+        const audio::TimePosition& position = m_playheadPosition->currentPosition();
+        if (position.isValid()) {
+            musicalPosition = m_playheadPosition->musicalPosition(position);
+        }
+    }
+
+    m_vstAudioClient->process(buffer, sampleCount, playbackPositionSamples, musicalPosition);
 }

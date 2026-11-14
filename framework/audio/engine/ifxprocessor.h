@@ -26,6 +26,8 @@
 
 #include "audio/common/audiotypes.h"
 
+#include "iplayhead.h"
+
 namespace muse::audio {
 class IFxProcessor
 {
@@ -46,6 +48,9 @@ public:
     virtual void setMode(const ProcessMode mode) = 0;
 
     virtual bool shouldProcessDuringSilence() const = 0;
+
+    //! Optional: lets the processor ask where the music is (tempo, bar, beat) at a given time
+    virtual void setPlayheadPosition(engine::PlayheadPositionPtr) {}
 
     virtual void process(float* buffer, samples_t sampleCount, samples_t playbackPositionSamples = 0) = 0;
 };

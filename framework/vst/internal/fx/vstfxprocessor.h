@@ -54,6 +54,8 @@ public:
 
     bool shouldProcessDuringSilence() const override;
 
+    void setPlayheadPosition(audio::engine::PlayheadPositionPtr playheadPosition) override;
+
     void process(float* buffer, audio::samples_t sampleCount, audio::samples_t playbackPositionSamples = 0) override;
 
 private:
@@ -66,6 +68,7 @@ private:
     async::Channel<muse::audio::AudioFxParams> m_paramsChanges;
 
     audio::OutputSpec m_outputSpec;
+    audio::engine::PlayheadPositionPtr m_playheadPosition = nullptr;
 };
 
 using VstFxPtr = std::shared_ptr<VstFxProcessor>;

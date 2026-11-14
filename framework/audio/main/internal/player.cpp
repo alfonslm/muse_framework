@@ -190,6 +190,13 @@ void Player::resetLoop()
     channel()->send(msg);
 }
 
+void Player::setMusicalTimeMap(const MusicalTimeMap& map)
+{
+    ONLY_AUDIO_MAIN_THREAD;
+    Msg msg = rpc::make_request(ctxId(), MsgCode::SetMusicalTimeMap, RpcPacker::pack(map));
+    channel()->send(msg);
+}
+
 secs_t Player::playbackPosition() const
 {
     ONLY_AUDIO_MAIN_THREAD;

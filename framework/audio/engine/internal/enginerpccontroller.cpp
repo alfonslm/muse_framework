@@ -721,6 +721,20 @@ void EngineRpcController::init()
             }
         });
 
+        onQuickRequest(ctxId, MsgCode::SetMusicalTimeMap, [this](const Msg& msg) {
+            ONLY_AUDIO_RPC_THREAD;
+            MusicalTimeMap map;
+            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, map)) {
+                return make_response_ret(msg, make_ret(Err::InvalidRpcData));
+            }
+            if (auto actx = audioContext(msg.ctxId)) {
+                actx->setMusicalTimeMap(map);
+                return make_response_ret(msg, make_ok());
+            } else {
+                return make_response_ret(msg, make_ret(Err::InvalidContext));
+            }
+        });
+
         onQuickRequest(ctxId, MsgCode::GetPlaybackStatus, [this](const Msg& msg) {
             ONLY_AUDIO_RPC_THREAD;
 

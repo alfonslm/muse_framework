@@ -119,6 +119,7 @@ public:
     void setDuration(const secs_t duration) override;
     Ret setLoop(const secs_t from, const secs_t to) override;
     void resetLoop() override;
+    void setMusicalTimeMap(const MusicalTimeMap& map) override;
 
     PlaybackStatus playbackStatus() const override;
     async::Channel<PlaybackStatus> playbackStatusChanged() const override;

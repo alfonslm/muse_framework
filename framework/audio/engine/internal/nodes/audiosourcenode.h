@@ -29,6 +29,8 @@
 #include "audio/common/audiotypes.h"
 #include "audio/common/timeposition.h"
 
+#include "../../iplayhead.h"
+
 namespace muse::audio {
 struct SourceTag
 {
@@ -44,6 +46,8 @@ public:
 
     virtual void seek(const TimePosition& position, const bool flushSound = true) = 0;
     virtual void flush() = 0;
+
+    virtual void setPlayheadPosition(PlayheadPositionPtr) {}
 
     virtual const AudioInputParams& inputParams() const = 0;
     virtual void applyInputParams(const AudioInputParams& requiredParams) = 0;

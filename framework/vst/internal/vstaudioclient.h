@@ -25,6 +25,7 @@
 #include "../vsttypes.h"
 
 #include "modularity/ioc.h"
+#include "audio/common/musicaltimemap.h"
 #include "audio/engine/itransporteventsdispatcher.h"
 #include "midiremote/immcdecoderfactory.h"
 
@@ -52,7 +53,8 @@ public:
 
     void flushSound();
 
-    audio::samples_t process(float* output, audio::samples_t samplesPerChannel, audio::samples_t playbackPositionSamples = 0);
+    audio::samples_t process(float* output, audio::samples_t samplesPerChannel, audio::samples_t playbackPositionSamples = 0,
+                             const audio::MusicalPosition& musicalPosition = audio::MusicalPosition());
 
     ParamsMapping paramsMapping(const std::set<Steinberg::Vst::CtrlNumber>& controllers) const;
 
@@ -61,6 +63,7 @@ private:
     PluginComponentPtr pluginComponent() const;
 
     void setUpProcessData();
+    void updateProcessContext(audio::samples_t playbackPositionSamples, const audio::MusicalPosition& musicalPosition);
     void updateProcessSetup();
     void extractInputSamples(muse::audio::samples_t sampleCount, const float* sourceBuffer);
 

@@ -188,6 +188,11 @@ void VstSynthesiser::setPlaybackPosition(const muse::audio::TimePosition& positi
     }
 }
 
+void VstSynthesiser::setPlayheadPosition(audio::engine::PlayheadPositionPtr playheadPosition)
+{
+    m_playheadPosition = playheadPosition;
+}
+
 void VstSynthesiser::setOutputSpec(const audio::OutputSpec& spec)
 {
     m_outputSpec = spec;
@@ -250,5 +255,10 @@ samples_t VstSynthesiser::processSequence(const VstSequencer::EventSequence& seq
         return 0;
     }
 
-    return m_vstAudioClient->process(buffer, samples, m_currentPosition.samples());
+    audio::MusicalPosition musicalPosition;
+    if (m_playheadPosition && m_currentPosition.isValid()) {
+        musicalPosition = m_playheadPosition->musicalPosition(m_currentPosition);
+    }
+
+    return m_vstAudioClient->process(buffer, samples, m_currentPosition.samples(), musicalPosition);
 }
