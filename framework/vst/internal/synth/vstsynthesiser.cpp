@@ -91,6 +91,15 @@ void VstSynthesiser::init(const OutputSpec& spec)
     m_sequencer.setOnOffStreamFlushed([this]() {
         m_vstAudioClient->flushSound();
     });
+
+    if (config()) {
+        config()->keepPluginInstrumentsActiveWhenIdleChanged().onReceive(this, [this](bool keep) {
+            //! NOTE While playing the plugin is active anyway
+            if (m_inited && !isModePlaying(m_mode)) {
+                m_vstAudioClient->setIsActive(keep);
+            }
+        });
+    }
 }
 
 void VstSynthesiser::applyKeyswitchMap()
@@ -178,7 +187,10 @@ void VstSynthesiser::setMode(const muse::audio::ProcessMode mode)
     m_sequencer.setActive(isActive);
     toggleVolumeGain(isActive);
     m_vstAudioClient->setIsPlaying(isActive);
-    m_vstAudioClient->setIsActive(isActive);
+
+    //! NOTE Normally the plugin is deactivated while playback is stopped. A plugin with its own editor and
+    //! transport (a sequencer, a singing synthesizer) is then silent and frozen, so that can be switched off
+    m_vstAudioClient->setIsActive(isActive || shouldProcessWhenIdle());
 
     m_vstAudioClient->setIsOffline(mode == ProcessMode::PlayingOffline);
 
@@ -212,6 +224,16 @@ void VstSynthesiser::setPlaybackPosition(const muse::audio::TimePosition& positi
     }
 }
 
+void VstSynthesiser::setPlayheadPosition(audio::engine::PlayheadPositionPtr playheadPosition)
+{
+    m_playheadPosition = playheadPosition;
+}
+
+bool VstSynthesiser::shouldProcessWhenIdle() const
+{
+    return config() && config()->keepPluginInstrumentsActiveWhenIdle();
+}
+
 void VstSynthesiser::setOutputSpec(const audio::OutputSpec& spec)
 {
     m_outputSpec = spec;
@@ -243,8 +265,13 @@ samples_t VstSynthesiser::process(float* buffer, samples_t samplesPerChannel)
     auto processSegment = [&](samples_t segmentEnd) {
         if (segmentEnd > segmentStart) {
             const samples_t segmentSamples = segmentEnd - segmentStart;
+            audio::MusicalPosition musicalPosition;
+            if (m_playheadPosition && m_currentPosition.isValid()) {
+                musicalPosition = m_playheadPosition->musicalPosition(m_currentPosition);
+            }
+
             processedSamples += m_vstAudioClient->process(buffer + segmentStart * m_outputSpec.audioChannelCount, segmentSamples,
-                                                          m_currentPosition.samples(), volumeGainChanges);
+                                                          m_currentPosition.samples(), musicalPosition, volumeGainChanges);
 
             if (active) {
                 m_currentPosition.forward(segmentSamples);

@@ -90,6 +90,7 @@ public:
     MOCK_METHOD(void, setDuration, (const secs_t), (override));
     MOCK_METHOD(Ret, setLoop, (const secs_t, const secs_t), (override));
     MOCK_METHOD(void, resetLoop, (), (override));
+    MOCK_METHOD(void, setMusicalTimeMap, (const MusicalTimeMap& map), (override));
 
     MOCK_METHOD(PlaybackStatus, playbackStatus, (), (const, override));
     MOCK_METHOD(async::Channel<PlaybackStatus>, playbackStatusChanged, (), (const, override));

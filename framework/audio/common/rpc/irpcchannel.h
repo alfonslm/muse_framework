@@ -115,6 +115,7 @@ enum class MsgCode {
     SetDuration,
     SetLoop,
     ResetLoop,
+    SetMusicalTimeMap,
     GetPlaybackStatus,
     GetPlaybackPosition,
 
@@ -216,6 +217,7 @@ inline std::string to_string(MsgCode m)
     case MsgCode::SetDuration: return "SetDuration";
     case MsgCode::SetLoop: return "SetLoop";
     case MsgCode::ResetLoop: return "ResetLoop";
+    case MsgCode::SetMusicalTimeMap: return "SetMusicalTimeMap";
     case MsgCode::GetPlaybackStatus: return "GetPlaybackStatus";
     case MsgCode::GetPlaybackPosition: return "GetPlaybackPosition";
 

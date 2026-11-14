@@ -56,6 +56,7 @@ public:
 
     Ret setLoop(const secs_t from, const secs_t to) override;
     void resetLoop() override;
+    void setMusicalTimeMap(const MusicalTimeMap& map) override;
 
     secs_t playbackPosition() const override;
     async::Channel<secs_t> playbackPositionChanged() const override;
@@ -63,6 +64,7 @@ public:
     // IPlayhead interface
     void forward(const TimePosition& delta) override;
     const TimePosition& currentPosition() const override;
+    MusicalPosition musicalPosition(const TimePosition& position) const override;
 
 private:
 
@@ -107,6 +109,8 @@ private:
     secs_t m_countDown = 0.;
     secs_t m_timeLoopStart = 0.;
     secs_t m_timeLoopEnd = 0.;
+
+    MusicalTimeMap m_musicalTimeMap;
 
     async::Channel<TimeEvent> m_timeEvent;
 

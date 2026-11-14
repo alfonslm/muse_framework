@@ -50,6 +50,9 @@ public:
     void seek(const TimePosition& position, const bool flushSound = true) override;
     void flush() override;
 
+    void setPlayheadPosition(PlayheadPositionPtr playheadPosition) override;
+    bool shouldProcessWhenIdle() const override;
+
     const AudioInputParams& inputParams() const override;
     void applyInputParams(const AudioInputParams& requiredParams) override;
     async::Channel<AudioInputParams> inputParamsChanged() const override;
@@ -95,6 +98,7 @@ private:
     TrackId m_trackId = -1;
     mpe::PlaybackData m_playbackData;
     synth::ISynthesizerPtr m_synth = nullptr;
+    PlayheadPositionPtr m_playheadPosition = nullptr;
     AudioInputParams m_params;
     async::Channel<AudioInputParams> m_paramsChanges;
 

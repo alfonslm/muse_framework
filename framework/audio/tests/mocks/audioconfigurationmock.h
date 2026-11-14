@@ -69,6 +69,10 @@ public:
     MOCK_METHOD(void, setUseSoundFontLowPassFilter, (bool), (override));
     MOCK_METHOD(async::Channel<bool>, useSoundFontLowPassFilterChanged, (), (const, override));
 
+    MOCK_METHOD(bool, keepPluginInstrumentsActiveWhenIdle, (), (const, override));
+    MOCK_METHOD(void, setKeepPluginInstrumentsActiveWhenIdle, (bool), (override));
+    MOCK_METHOD(async::Channel<bool>, keepPluginInstrumentsActiveWhenIdleChanged, (), (const, override));
+
     MOCK_METHOD(bool, shouldMeasureInputLag, (), (const, override));
 };
 }

@@ -30,6 +30,8 @@
 #include "audio/common/audiotypes.h"
 #include "audio/common/timeposition.h"
 
+#include "iplayhead.h"
+
 namespace muse::audio::synth {
 class ISynthesizer
 {
@@ -53,6 +55,13 @@ public:
 
     virtual TimePosition playbackPosition() const = 0;
     virtual void setPlaybackPosition(const TimePosition& position) = 0;
+
+    //! Optional: lets the synthesizer ask where the music is (tempo, bar, beat) at a given time
+    virtual void setPlayheadPosition(engine::PlayheadPositionPtr) {}
+
+    //! Optional: whether the synthesizer wants to be processed while playback is stopped,
+    //! even when only some of the tracks are (e.g. while a note of another track is auditioned)
+    virtual bool shouldProcessWhenIdle() const { return false; }
 
     virtual void prepareToPlay() = 0;
     virtual bool readyToPlay() const = 0;

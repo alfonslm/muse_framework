@@ -31,6 +31,7 @@ set(MODULE_TEST_SRC
 
     ${CMAKE_CURRENT_LIST_DIR}/alignbuffer_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/audioresourcetypes_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/musicaltimemap_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/audiodrivercontroller_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/enginerpccontroller_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/playback_tests.cpp

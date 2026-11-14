@@ -120,6 +120,7 @@ public:
     void setDuration(const secs_t duration) override;
     Ret setLoop(const secs_t from, const secs_t to) override;
     void resetLoop() override;
+    void setMusicalTimeMap(const MusicalTimeMap& map) override;
 
     PlaybackStatus playbackStatus() const override;
     async::Channel<PlaybackStatus> playbackStatusChanged() const override;
@@ -221,6 +222,10 @@ private:
 
     // -----
     void onShouldProcessDuringSilenceChanged(const TrackId trackId, bool shouldProcess);
+
+    //! NOTE Adds the tracks whose source asks to be processed while idle. An empty set stays empty:
+    //! it means "process every track"
+    std::unordered_set<TrackId> withSourcesToProcessWhenIdle(std::unordered_set<TrackId> trackIds) const;
     TrackId m_prevActiveTrackId = INVALID_TRACK_ID;
     std::unordered_set<TrackId> m_tracksToProcessWhenIdle;
     // -----

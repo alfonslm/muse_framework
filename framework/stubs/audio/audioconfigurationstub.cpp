@@ -162,6 +162,20 @@ async::Channel<bool> AudioConfigurationStub::useSoundFontLowPassFilterChanged() 
     return {};
 }
 
+bool AudioConfigurationStub::keepPluginInstrumentsActiveWhenIdle() const
+{
+    return false;
+}
+
+void AudioConfigurationStub::setKeepPluginInstrumentsActiveWhenIdle(bool)
+{
+}
+
+async::Channel<bool> AudioConfigurationStub::keepPluginInstrumentsActiveWhenIdleChanged() const
+{
+    return {};
+}
+
 bool AudioConfigurationStub::shouldMeasureInputLag() const
 {
     return false;

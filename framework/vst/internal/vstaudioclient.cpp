@@ -255,13 +255,8 @@ void VstAudioClient::flushSound()
 }
 
 audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChannel,
-                                         samples_t playbackPositionSamples)
-{
-    return process(output, samplesPerChannel, playbackPositionSamples, {});
-}
-
-audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChannel,
-                                         samples_t playbackPositionSamples, const VolumeGainChanges& volumeGainChanges)
+                                         samples_t playbackPositionSamples, const MusicalPosition& musicalPosition,
+                                         const VolumeGainChanges& volumeGainChanges)
 {
     //! NOTE Whatever happens below, the gain changes of this call still take effect
     DEFER {
@@ -286,7 +281,7 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
     //! but never bigger than the maxSamplesPerBlock
     m_processData.numSamples = samplesPerChannel;
 
-    m_processContext.projectTimeSamples = playbackPositionSamples;
+    updateProcessContext(playbackPositionSamples, musicalPosition);
 
     if (samplesPerChannel > m_outputSpec.samplesPerChannel) {
         OutputSpec newSpec = m_outputSpec;
@@ -362,6 +357,34 @@ PluginComponentPtr VstAudioClient::pluginComponent() const
     }
 
     return m_pluginComponent;
+}
+
+void VstAudioClient::updateProcessContext(samples_t playbackPositionSamples, const MusicalPosition& musicalPosition)
+{
+    using Context = VstProcessContext;
+
+    static constexpr uint32_t MUSICAL_FLAGS = Context::kTempoValid | Context::kProjectTimeMusicValid
+                                              | Context::kBarPositionValid | Context::kTimeSigValid;
+
+    m_processContext.projectTimeSamples = playbackPositionSamples;
+    m_processContext.state &= ~MUSICAL_FLAGS;
+
+    //! NOTE Without these a plugin that follows the host transport (a sequencer, an arpeggiator, a tempo-synced delay...)
+    //! does not know the tempo, nor which bar and beat it is at
+    if (!musicalPosition.isValid()) {
+        return;
+    }
+
+    m_processContext.tempo = musicalPosition.bpm;
+    m_processContext.projectTimeMusic = musicalPosition.quarters;
+    m_processContext.barPositionMusic = musicalPosition.barStartQuarters;
+    m_processContext.state |= Context::kTempoValid | Context::kProjectTimeMusicValid | Context::kBarPositionValid;
+
+    if (musicalPosition.hasTimeSig()) {
+        m_processContext.timeSigNumerator = musicalPosition.timeSigNumerator;
+        m_processContext.timeSigDenominator = musicalPosition.timeSigDenominator;
+        m_processContext.state |= Context::kTimeSigValid;
+    }
 }
 
 void VstAudioClient::setUpProcessData()

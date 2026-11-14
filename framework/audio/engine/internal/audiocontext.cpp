@@ -123,7 +123,7 @@ void AudioContext::onModeChanged(const ProcessMode mode)
 {
     ONLY_AUDIO_ENGINE_THREAD;
     if (mode == ProcessMode::Idle) {
-        m_mixer->setTracksToProcessWhenIdle(m_tracksToProcessWhenIdle);
+        m_mixer->setTracksToProcessWhenIdle(withSourcesToProcessWhenIdle(m_tracksToProcessWhenIdle));
     }
 
     //! NOTE will be set on all nodes in the chain
@@ -202,7 +202,7 @@ RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackNam
             tracksToProcess.insert({ m_prevActiveTrackId, trackId });
         }
 
-        m_mixer->setTracksToProcessWhenIdle(tracksToProcess);
+        m_mixer->setTracksToProcessWhenIdle(withSourcesToProcessWhenIdle(std::move(tracksToProcess)));
         m_prevActiveTrackId = trackId;
     };
 
@@ -211,6 +211,8 @@ RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackNam
     if (!source.ret) {
         return RetType::make_ret(source.ret);
     }
+
+    source.val->setPlayheadPosition(std::static_pointer_cast<IPlayheadPosition>(m_player));
 
     AutomationControlNodePtr controlNode = std::make_shared<AutomationControlNode>();
     controlNode->setPlayheadPosition(std::static_pointer_cast<IPlayheadPosition>(m_player));
@@ -526,7 +528,25 @@ void AudioContext::onShouldProcessDuringSilenceChanged(const TrackId trackId, bo
         muse::remove(m_tracksToProcessWhenIdle, trackId);
     }
 
-    m_mixer->setTracksToProcessWhenIdle(m_tracksToProcessWhenIdle);
+    m_mixer->setTracksToProcessWhenIdle(withSourcesToProcessWhenIdle(m_tracksToProcessWhenIdle));
+}
+
+std::unordered_set<TrackId> AudioContext::withSourcesToProcessWhenIdle(std::unordered_set<TrackId> trackIds) const
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    if (trackIds.empty()) {
+        return trackIds;
+    }
+
+    for (const Track& t : m_tracks) {
+        const auto source = std::dynamic_pointer_cast<AudioSourceNode>(t.chain->source());
+        if (source && source->shouldProcessWhenIdle()) {
+            trackIds.insert(t.id);
+        }
+    }
+
+    return trackIds;
 }
 
 // Sources
@@ -756,6 +776,12 @@ void AudioContext::resetLoop()
 {
     ONLY_AUDIO_ENGINE_THREAD;
     m_player->resetLoop();
+}
+
+void AudioContext::setMusicalTimeMap(const MusicalTimeMap& map)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+    m_player->setMusicalTimeMap(map);
 }
 
 PlaybackStatus AudioContext::playbackStatus() const
