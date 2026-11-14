@@ -21,6 +21,7 @@
  */
 #include "vstsynthesiser.h"
 
+#include "keyswitchmapregistry.h"
 #include "log.h"
 
 using namespace muse;
@@ -66,6 +67,7 @@ void VstSynthesiser::init(const OutputSpec& spec)
         m_vstAudioClient->setOutputSpec(m_outputSpec);
         m_vstAudioClient->loadSupportedParams();
         m_sequencer.init(m_vstAudioClient->paramsMapping(SUPPORTED_CONTROLLERS), m_useDynamicEvents);
+        applyKeyswitchMap();
         m_inited = true;
     };
 
@@ -87,6 +89,24 @@ void VstSynthesiser::init(const OutputSpec& spec)
     m_sequencer.setOnOffStreamFlushed([this]() {
         m_vstAudioClient->flushSound();
     });
+}
+
+void VstSynthesiser::applyKeyswitchMap()
+{
+    static const std::string KEYSWITCH_MAP_ID_KEY = "keyswitchMapId";
+
+    auto it = m_params.configuration.find(KEYSWITCH_MAP_ID_KEY);
+    if (it == m_params.configuration.cend() || it->second.empty()) {
+        return;
+    }
+
+    const KeyswitchMap* map = KeyswitchMapRegistry::instance().mapById(it->second);
+    if (!map) {
+        LOGW() << "Keyswitch map '" << it->second << "' not found for track " << m_trackId;
+        return;
+    }
+
+    m_sequencer.setKeyswitchMap(map);
 }
 
 void VstSynthesiser::toggleVolumeGain(const bool isActive)

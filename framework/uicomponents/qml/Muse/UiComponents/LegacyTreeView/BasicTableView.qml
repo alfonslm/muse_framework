@@ -411,6 +411,19 @@ FocusScope {
     /*! \internal */
     property Item __mouseArea
 
+    /*! \internal
+        Exposes the internal ListView so LegacyTreeView.qml (and other
+        subclasses ported from Qt Quick Controls 1) can drive selection,
+        scrolling and current-row tracking through it.
+    */
+    readonly property alias __listView: listView
+
+    /*! \internal
+        NOTE: LegacyTreeView.qml's currentIndex binding depends on this
+        staying in sync with listView.currentIndex -- do not remove.
+    */
+    readonly property alias __currentRow: listView.currentIndex
+
     Loader {
         id: styleLoader
         sourceComponent: style
@@ -453,21 +466,17 @@ FocusScope {
         //     restoreMode: Binding.RestoreBinding
         // }
 
-        // function incrementCurrentIndexBlocking() {
-        //     var oldIndex = __listView.currentIndex
-        //     __scroller.blockUpdates = true;
-        //     incrementCurrentIndex();
-        //     __scroller.blockUpdates = false;
-        //     return oldIndex !== __listView.currentIndex
-        // }
+        function incrementCurrentIndexBlocking() {
+            var oldIndex = listView.currentIndex
+            incrementCurrentIndex()
+            return oldIndex !== listView.currentIndex
+        }
 
-        // function decrementCurrentIndexBlocking() {
-        //     var oldIndex = __listView.currentIndex
-        //     __scroller.blockUpdates = true;
-        //     decrementCurrentIndex();
-        //     __scroller.blockUpdates = false;
-        //     return oldIndex !== __listView.currentIndex
-        // }
+        function decrementCurrentIndexBlocking() {
+            var oldIndex = listView.currentIndex
+            decrementCurrentIndex()
+            return oldIndex !== listView.currentIndex
+        }
 
         // function scrollIfNeeded(key) {
         //     var diff = key === Qt.Key_PageDown ? height :
