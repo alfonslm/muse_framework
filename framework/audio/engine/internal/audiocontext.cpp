@@ -327,6 +327,8 @@ RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackNam
         return RetType::make_ret(source.ret);
     }
 
+    source.val->setPlayheadPosition(std::static_pointer_cast<IPlayheadPosition>(m_player));
+
     AutomationControlNodePtr controlNode = std::make_shared<AutomationControlNode>();
     controlNode->setPlayheadPosition(std::static_pointer_cast<IPlayheadPosition>(m_player));
 
@@ -871,6 +873,12 @@ void AudioContext::resetLoop()
 {
     ONLY_AUDIO_ENGINE_THREAD;
     m_player->resetLoop();
+}
+
+void AudioContext::setMusicalTimeMap(const MusicalTimeMap& map)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+    m_player->setMusicalTimeMap(map);
 }
 
 PlaybackStatus AudioContext::playbackStatus() const

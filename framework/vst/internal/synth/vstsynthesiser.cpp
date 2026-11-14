@@ -212,6 +212,11 @@ void VstSynthesiser::setPlaybackPosition(const muse::audio::TimePosition& positi
     }
 }
 
+void VstSynthesiser::setPlayheadPosition(audio::engine::PlayheadPositionPtr playheadPosition)
+{
+    m_playheadPosition = playheadPosition;
+}
+
 void VstSynthesiser::setOutputSpec(const audio::OutputSpec& spec)
 {
     m_outputSpec = spec;
@@ -243,8 +248,13 @@ samples_t VstSynthesiser::process(float* buffer, samples_t samplesPerChannel)
     auto processSegment = [&](samples_t segmentEnd) {
         if (segmentEnd > segmentStart) {
             const samples_t segmentSamples = segmentEnd - segmentStart;
+            audio::MusicalPosition musicalPosition;
+            if (m_playheadPosition && m_currentPosition.isValid()) {
+                musicalPosition = m_playheadPosition->musicalPosition(m_currentPosition);
+            }
+
             processedSamples += m_vstAudioClient->process(buffer + segmentStart * m_outputSpec.audioChannelCount, segmentSamples,
-                                                          m_currentPosition.samples(), volumeGainChanges);
+                                                          m_currentPosition.samples(), musicalPosition, volumeGainChanges);
 
             if (active) {
                 m_currentPosition.forward(segmentSamples);

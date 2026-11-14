@@ -25,6 +25,7 @@
 #include <memory>
 
 #include "audio/common/timeposition.h"
+#include "audio/common/musicaltimemap.h"
 
 namespace muse::audio::engine {
 class IPlayheadPosition
@@ -32,6 +33,9 @@ class IPlayheadPosition
 public:
     virtual ~IPlayheadPosition() = default;
     virtual const TimePosition& currentPosition() const = 0;
+
+    //! Where the music is at the given time. Not valid if the tempo of the music is not known.
+    virtual MusicalPosition musicalPosition(const TimePosition& position) const = 0;
 };
 
 class IPlayhead : public IPlayheadPosition

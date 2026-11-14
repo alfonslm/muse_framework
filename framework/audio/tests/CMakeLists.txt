@@ -29,6 +29,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/wavdecoder_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/audiodecoder_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/clipaudionode_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/musicaltimemap_tests.cpp
 )
 
 include(SetupGTest)

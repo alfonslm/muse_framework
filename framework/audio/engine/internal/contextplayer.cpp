@@ -148,6 +148,11 @@ const TimePosition& ContextPlayer::currentPosition() const
     return m_currentPosition;
 }
 
+MusicalPosition ContextPlayer::musicalPosition(const TimePosition& position) const
+{
+    return m_musicalTimeMap.positionAt(position.time().raw());
+}
+
 void ContextPlayer::onTimeEvent(const TimeEvent event)
 {
     ONLY_AUDIO_ENGINE_THREAD;
@@ -305,6 +310,13 @@ void ContextPlayer::resetLoop()
     ONLY_ON_OPERATION_EXEC;
     m_timeLoopStart = 0;
     m_timeLoopEnd = 0;
+}
+
+void ContextPlayer::setMusicalTimeMap(const MusicalTimeMap& map)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+    ONLY_ON_OPERATION_EXEC; // the processing thread reads the map
+    m_musicalTimeMap = map;
 }
 
 secs_t ContextPlayer::playbackPosition() const

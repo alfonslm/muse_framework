@@ -139,6 +139,17 @@ void EventAudioNode::flush()
     m_synth->flushSound();
 }
 
+void EventAudioNode::setPlayheadPosition(PlayheadPositionPtr playheadPosition)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    m_playheadPosition = playheadPosition;
+
+    if (m_synth) {
+        m_synth->setPlayheadPosition(m_playheadPosition);
+    }
+}
+
 const AudioInputParams& EventAudioNode::inputParams() const
 {
     return m_params;
@@ -296,5 +307,6 @@ void EventAudioNode::setupSource()
     }
 
     m_synth->setOutputSpec(m_outputSpec);
+    m_synth->setPlayheadPosition(m_playheadPosition);
     m_synth->setup(m_playbackData);
 }
