@@ -747,6 +747,19 @@ void EngineRpcController::init()
             }
         });
 
+        onQuickRequest(ctxId, MsgCode::GetPlaybackPositionAnchor, [this](const Msg& msg) {
+            ONLY_AUDIO_RPC_THREAD;
+
+            if (auto actx = audioContext(msg.ctxId)) {
+                PlaybackPositionAnchor anchor = actx->playbackPositionAnchor();
+                async::Channel<PlaybackPositionAnchor> ch = actx->playbackPositionAnchorChanged();
+                StreamId streamId = channel()->addSendStream(StreamName::PlaybackPositionAnchorStream, ch);
+                return make_response(msg, RpcPacker::pack(make_ok(), anchor, streamId));
+            } else {
+                return make_response(msg, RpcPacker::pack(make_ret(Err::InvalidContext), PlaybackPositionAnchor(), StreamId(0)));
+            }
+        });
+
         // Export
 
         onLongRequest(ctxId, MsgCode::SaveSoundTrack, [this](const Msg& msg) {

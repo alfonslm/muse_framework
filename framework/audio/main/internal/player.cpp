@@ -91,6 +91,27 @@ void Player::init()
             }
         });
     }
+
+    {
+        Msg msg = rpc::make_request(ctxId(), MsgCode::GetPlaybackPositionAnchor);
+        channel()->send(msg, [this](const Msg& res) {
+            ONLY_AUDIO_MAIN_THREAD;
+            Ret ret;
+            PlaybackPositionAnchor anchor;
+            StreamId streamId = 0;
+            IF_ASSERT_FAILED(RpcPacker::unpack(res.data, ret, anchor, streamId)) {
+                return;
+            }
+
+            if (ret) {
+                channel()->addReceiveStream(StreamName::PlaybackPositionAnchorStream, streamId, m_playbackPositionAnchorChanged);
+                //! NOTE Send initial state
+                m_playbackPositionAnchorChanged.send(anchor);
+            } else {
+                LOGE() << "GetPlaybackPositionAnchor failed: " << ret.toString();
+            }
+        });
+    }
 }
 
 async::Promise<Ret> Player::prepareToPlay()
@@ -200,6 +221,12 @@ async::Channel<secs_t> Player::playbackPositionChanged() const
 {
     ONLY_AUDIO_MAIN_THREAD;
     return m_playbackPositionChanged;
+}
+
+async::Channel<PlaybackPositionAnchor> Player::playbackPositionAnchorChanged() const
+{
+    ONLY_AUDIO_MAIN_THREAD;
+    return m_playbackPositionAnchorChanged;
 }
 
 PlaybackStatus Player::playbackStatus() const

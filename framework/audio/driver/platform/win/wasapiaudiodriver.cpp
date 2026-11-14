@@ -26,6 +26,8 @@
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
 
+#include "audio/common/outputlatency.h"
+
 #include "global/defer.h"
 #include "global/translation.h"
 
@@ -470,6 +472,16 @@ bool WasapiAudioDriver::th_audioInitialize()
     }
 
     m_data->audioClient->GetBufferSize(&m_bufferFrames);
+
+    //! NOTE The latency of the stream after our buffer (audio engine, device), 100 ns units.
+    //! It does not include what the device does not report (e.g. Bluetooth)
+    REFERENCE_TIME streamLatency = 0;
+    if (SUCCEEDED(m_data->audioClient->GetStreamLatency(&streamLatency)) && streamLatency > 0) {
+        m_streamLatencySecs = static_cast<double>(streamLatency) / 10000000.0;
+    } else {
+        m_streamLatencySecs = 0.0;
+    }
+    OutputLatency::reset();
     REFERENCE_TIME defaultPeriod = 0;
     REFERENCE_TIME minimumPeriod = 0;
     m_data->audioClient->GetDevicePeriod(&defaultPeriod, &minimumPeriod);
@@ -527,6 +539,11 @@ void WasapiAudioDriver::th_processAudioData()
     }
 
     const uint32_t actualFramesToRead = framesAvailable;
+
+    //! NOTE The queued frames are played before the ones we are about to write
+    if (const uint32_t sampleRate = m_data->mixFormat->nSamplesPerSec; sampleRate > 0) {
+        OutputLatency::report(static_cast<double>(paddingFrames) / sampleRate + m_streamLatencySecs);
+    }
 
     // WASAPI: "nBlockAlign must be equal to the product of nChannels and wBitsPerSample divided by 8 (bits per byte)"
     const uint32_t clientFrameSize = m_data->mixFormat->nBlockAlign;

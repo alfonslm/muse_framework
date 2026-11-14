@@ -34,11 +34,13 @@
 #include <mutex>
 
 #include <AudioToolbox/AudioToolbox.h>
+#include <mach/mach_time.h>
 #include <optional>
 #include <string_view>
 
 #include "common/audiotypes.h"
 #include "common/audioworkgroup.h"
+#include "audio/common/outputlatency.h"
 #include "translation.h"
 #include "log.h"
 
@@ -61,6 +63,9 @@ struct OSXDirectAudioDriver::Data {
 
     OSXAudioDeviceID deviceId{};
 
+    //! Latency of the device after it has taken the samples
+    double deviceLatencySecs = 0.0;
+
     std::atomic<bool> stopPending{ false };
     std::atomic<bool> stopped{ false };
 
@@ -73,6 +78,7 @@ struct OSXDirectAudioDriver::Data {
         procId = other.procId;
         canBeDirectlyMapped = other.canBeDirectlyMapped;
         deviceId = other.deviceId;
+        deviceLatencySecs = other.deviceLatencySecs;
         stopPending = other.stopPending.load();
         stopped = other.stopped.load();
         channelBufferOutputDetails = other.channelBufferOutputDetails;
@@ -182,13 +188,84 @@ static std::optional<uint32_t> getSameRequestedSampleCount(const AudioBufferList
     return sampleCount;
 }
 
-//TODO: make use of timing parameters
+
+//! NOTE The latency of the device after it has taken the samples, in frames.
+//! With the safety offset if asked (the time stamps of an IOProc already include it)
+static UInt32 deviceOutputLatencyFrames(AudioDeviceID deviceId, bool withSafetyOffset)
+{
+    auto uint32Property = [](AudioObjectID objectId, AudioObjectPropertySelector selector, AudioObjectPropertyScope scope) -> UInt32 {
+        AudioObjectPropertyAddress address = {
+            .mSelector = selector,
+            .mScope = scope,
+            .mElement = kAudioObjectPropertyElementMaster
+        };
+
+        UInt32 value = 0;
+        UInt32 size = sizeof(value);
+        if (AudioObjectGetPropertyData(objectId, &address, 0, nullptr, &size, &value) != noErr) {
+            return 0;
+        }
+        return value;
+    };
+
+    UInt32 frames = uint32Property(deviceId, kAudioDevicePropertyLatency, kAudioObjectPropertyScopeOutput);
+
+    if (withSafetyOffset) {
+        frames += uint32Property(deviceId, kAudioDevicePropertySafetyOffset, kAudioObjectPropertyScopeOutput);
+    }
+
+    // the first output stream
+    AudioObjectPropertyAddress streamsAddress = {
+        .mSelector = kAudioDevicePropertyStreams,
+        .mScope = kAudioObjectPropertyScopeOutput,
+        .mElement = kAudioObjectPropertyElementMaster
+    };
+
+    AudioStreamID streamId = kAudioObjectUnknown;
+    UInt32 streamIdSize = sizeof(streamId);
+    if (AudioObjectGetPropertyData(deviceId, &streamsAddress, 0, nullptr, &streamIdSize, &streamId) == noErr
+        && streamIdSize >= sizeof(streamId) && streamId != kAudioObjectUnknown) {
+        frames += uint32Property(streamId, kAudioStreamPropertyLatency, kAudioObjectPropertyScopeGlobal);
+    }
+
+    return frames;
+}
+
+static double hostTicksToSecs(UInt64 ticks)
+{
+    static const mach_timebase_info_data_t timebase = []() {
+        mach_timebase_info_data_t info = { 1, 1 };
+        mach_timebase_info(&info);
+        return info;
+    }();
+
+    if (timebase.denom == 0) {
+        return 0.0;
+    }
+
+    return static_cast<double>(ticks) * timebase.numer / timebase.denom / 1e9;
+}
+
+//! NOTE inOutputTime is when the first frame of this buffer goes to the device.
+//! The sound comes after the latency of the device itself
+static void reportOutputLatency(const AudioTimeStamp* inOutputTime, double deviceLatencySecs)
+{
+    if (!inOutputTime || !(inOutputTime->mFlags & kAudioTimeStampHostTimeValid)) {
+        return;
+    }
+
+    const UInt64 now = mach_absolute_time();
+    const double untilOutputSecs = inOutputTime->mHostTime > now ? hostTicksToSecs(inOutputTime->mHostTime - now) : 0.0;
+
+    OutputLatency::report(untilOutputSecs + deviceLatencySecs);
+}
+
 static int coreAudioIOProc(AudioObjectID /* inDevice*/,
                            const AudioTimeStamp* /* inNow */,
                            const AudioBufferList* /* inInputData */,
                            const AudioTimeStamp* /*  inInputTime */,
                            AudioBufferList* outOutputData,
-                           const AudioTimeStamp* /* inOutputTime */,
+                           const AudioTimeStamp* inOutputTime,
                            void* __nullable inClientData)
 {
     auto* data = reinterpret_cast<OSXDirectAudioDriver::Data*>(inClientData);
@@ -206,6 +283,8 @@ static int coreAudioIOProc(AudioObjectID /* inDevice*/,
     if (samplesPerChannel == 0) {
         return noErr;
     }
+
+    reportOutputLatency(inOutputTime, data->deviceLatencySecs);
 
     const uint32_t callbackDataStride = data->format.output.audioChannelCount;
     int dataSize = static_cast<int>(samplesPerChannel * callbackDataStride * sizeof(float));
@@ -651,6 +730,12 @@ bool OSXDirectAudioDriver::open(const Spec& spec, Spec* activeSpec)
     m_data->outBuffer.resize(m_data->format.output.samplesPerChannel
                              * m_data->format.output.audioChannelCount);
     m_data->deviceId = *deviceId;
+
+    OutputLatency::reset();
+    if (m_data->format.output.sampleRate > 0) {
+        m_data->deviceLatencySecs = static_cast<double>(deviceOutputLatencyFrames(*deviceId, false /*withSafetyOffset*/))
+                                    / m_data->format.output.sampleRate;
+    }
 
     auto result = AudioDeviceCreateIOProcID(*deviceId, coreAudioIOProc, m_data.get(),
                                             &m_data->procId);

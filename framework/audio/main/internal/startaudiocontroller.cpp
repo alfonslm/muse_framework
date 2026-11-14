@@ -29,6 +29,8 @@
 #include "audio/common/rpc/rpcpacker.h"
 #include "audio/common/workmode.h"
 #include "audio/common/alignmentbuffer.h"
+#include "audio/common/audioclock.h"
+#include "audio/common/outputlatency.h"
 
 #include "audio/engine/platform/general/generalaudioworker.h"
 
@@ -128,14 +130,18 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
 #ifndef Q_OS_WASM
 
     m_requiredSamplesTotal = requiredSpec.output.samplesPerChannel * requiredSpec.output.audioChannelCount;
+    m_outputSampleRate = requiredSpec.output.sampleRate;
 
     audioDriverController()->activeSpecChanged().onReceive(this, [this](const IAudioDriver::Spec& spec) {
         m_requiredSamplesTotal = spec.output.samplesPerChannel * spec.output.audioChannelCount;
+        m_outputSampleRate = spec.output.sampleRate;
     });
 
     bool shouldMeasureInputLag = configuration()->shouldMeasureInputLag();
     requiredSpec.callback = [this, shouldMeasureInputLag]
                             (uint8_t* stream, int byteCount) {
+        const int64_t callbackTimeNs = steadyClockNowNs();
+
         std::memset(stream, 0, byteCount);
         // driver metrics
         const size_t driverSamplesTotal = byteCount / sizeof(float);
@@ -182,9 +188,21 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
             }
         }
 
+        //! NOTE When the block we are about to render will be heard.
+        //! It goes after what the driver still has to play (the driver measures it, zero if it can't)
+        //! and after what is left in the alignment buffer
+        int64_t presentationTimeNs = callbackTimeNs + OutputLatency::nsOr(0);
+        if (useAlignBuffer) {
+            const sample_rate_t sampleRate = m_outputSampleRate;
+            if (sampleRate > 0) {
+                const size_t backlogSamplesPerChannel = alignbuf->availableRead() / 2;
+                presentationTimeNs += static_cast<int64_t>(backlogSamplesPerChannel) * 1000000000 / static_cast<int64_t>(sampleRate);
+            }
+        }
+
         // process
         if (workmode::mode() == workmode::HybridMode) {
-            m_engineController->process(procDest, (unsigned)procSamplesPerChannel);
+            m_engineController->process(procDest, (unsigned)procSamplesPerChannel, presentationTimeNs);
         } else if (workmode::mode() == workmode::DriverMode) {
             static bool once = false;
             if (!once) {
@@ -193,7 +211,7 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
             }
 
             m_rpcChannel->process();
-            m_engineController->process(procDest, (unsigned)procSamplesPerChannel);
+            m_engineController->process(procDest, (unsigned)procSamplesPerChannel, presentationTimeNs);
         } else {
             UNREACHABLE;
         }
@@ -217,6 +235,7 @@ void StartAudioController::startAudioProcessing(const IApplication::RunMode& mod
         if (!audioDriverController()->open(requiredSpec, &activeSpec)) {
             return;
         }
+        m_outputSampleRate = activeSpec.output.sampleRate;
     } else {
         activeSpec = requiredSpec;
     }

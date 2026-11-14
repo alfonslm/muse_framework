@@ -104,6 +104,10 @@ public:
     virtual secs_t playbackPosition() const = 0;
     virtual async::Channel<secs_t> playbackPositionChanged() const = 0;
 
+    //! Positions linked to the time they are heard, see PlaybackPositionAnchor
+    virtual PlaybackPositionAnchor playbackPositionAnchor() const = 0;
+    virtual async::Channel<PlaybackPositionAnchor> playbackPositionAnchorChanged() const = 0;
+
     // Export
     virtual async::Promise<Ret> saveSoundTrack(io::IODevice& dstDevice, const SoundTrackFormat& format) = 0;
     virtual SaveSoundTrackProgress saveSoundTrackProgressChanged() const = 0;

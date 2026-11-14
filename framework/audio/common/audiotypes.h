@@ -41,6 +41,7 @@
 #include "mpe/events.h"
 
 #include "automatablevalue.h"
+#include "playbackpositionanchor.h"
 
 #include "log.h"
 

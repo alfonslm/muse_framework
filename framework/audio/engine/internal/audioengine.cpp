@@ -96,7 +96,7 @@ RetVal<std::shared_ptr<IAudioContext> > AudioEngine::addAudioContext(const Audio
         return RetType::make_ret(Err::AudioContextAlreadyExists);
     }
 
-    auto ctx = std::make_shared<AudioContext>(ctxId, this);
+    auto ctx = std::make_shared<AudioContext>(ctxId, this, this);
     Ret ret = ctx->init();
     if (!ret) {
         return RetType::make_ret(ret);
@@ -201,9 +201,15 @@ samples_t AudioEngine::fillSilent(float* buffer, samples_t samplesPerChannel)
     return 0;
 }
 
-samples_t AudioEngine::process(float* buffer, samples_t samplesPerChannel)
+int64_t AudioEngine::blockPresentationTimeNs() const
+{
+    return m_blockPresentationTimeNs;
+}
+
+samples_t AudioEngine::process(float* buffer, samples_t samplesPerChannel, int64_t blockPresentationTimeNs)
 {
     m_processing = true;
+    m_blockPresentationTimeNs = blockPresentationTimeNs;
     DEFER {
         m_processing = false;
     };

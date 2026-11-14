@@ -55,7 +55,9 @@ public:
     OutputSpec outputSpec() const;
     async::Channel<OutputSpec> outputSpecChanged() const;
 
-    void process(float* stream, unsigned samplesPerChannel);
+    //! blockPresentationTimeNs - steady clock time at which the first sample of the block
+    //! is expected to be heard (see audioclock.h), zero if unknown
+    void process(float* stream, unsigned samplesPerChannel, int64_t blockPresentationTimeNs = 0);
 
 private:
     std::shared_ptr<rpc::IRpcChannel> m_rpcChannel;

@@ -21,6 +21,8 @@
  */
 #pragma once
 
+#include <atomic>
+
 #include "../istartaudiocontroller.h"
 
 #include "global/types/retval.h"
@@ -65,6 +67,7 @@ private:
     std::shared_ptr<engine::GeneralAudioWorker> m_worker;
     std::shared_ptr<AlignmentBuffer> m_alignmentBuffer;
     size_t m_requiredSamplesTotal = 0;
+    std::atomic<sample_rate_t> m_outputSampleRate = 0;
 
     ValCh<bool> m_isEngineRunning;
     ValCh<bool> m_isAudioStarted;

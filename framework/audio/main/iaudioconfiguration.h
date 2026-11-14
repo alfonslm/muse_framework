@@ -48,6 +48,14 @@ public:
     virtual void setAudioOutputDeviceId(const std::string& deviceId) = 0;
     virtual async::Notification audioOutputDeviceIdChanged() const = 0;
 
+    //! NOTE Extra output latency of a device, set by the user.
+    //! For the latency that the audio driver can't measure (e.g. Bluetooth, external processing),
+    //! the latency that the driver does measure is compensated automatically.
+    //! Kept per device of the current audio driver
+    virtual msecs_t outputLatencyCompensation(const AudioDeviceID& deviceId) const = 0;
+    virtual void setOutputLatencyCompensation(const AudioDeviceID& deviceId, msecs_t compensation) = 0;
+    virtual async::Notification outputLatencyCompensationChanged() const = 0;
+
     virtual audioch_t audioChannelsCount() const = 0;
 
     virtual unsigned int driverBufferSize() const = 0; // samples

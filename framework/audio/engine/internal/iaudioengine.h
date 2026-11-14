@@ -50,6 +50,8 @@ public:
     virtual OutputSpec outputSpec() const = 0;
     virtual async::Channel<OutputSpec> outputSpecChanged() const = 0;
 
-    virtual samples_t process(float* buffer, samples_t samplesPerChannel) = 0;
+    //! blockPresentationTimeNs - steady clock time at which the first sample of the block
+    //! is expected to be heard (see audioclock.h), zero if unknown
+    virtual samples_t process(float* buffer, samples_t samplesPerChannel, int64_t blockPresentationTimeNs) = 0;
 };
 }
