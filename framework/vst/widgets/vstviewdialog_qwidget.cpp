@@ -63,6 +63,17 @@ VstViewDialog::~VstViewDialog()
 
 void VstViewDialog::deinit()
 {
+    deinitPluginView();
+
+    if (m_instance) {
+        m_instance->loadingCompleted().disconnect(this);
+        m_instance->refreshConfig();
+        m_instance = nullptr;
+    }
+}
+
+void VstViewDialog::deinitPluginView()
+{
     if (m_view) {
         m_view->setFrame(nullptr);
         m_view->removed();
@@ -70,9 +81,7 @@ void VstViewDialog::deinit()
     }
 
     if (m_instance) {
-        m_instance->loadingCompleted().disconnect(this);
-        m_instance->refreshConfig();
-        m_instance = nullptr;
+        m_instance->unregisterEditor(this);
     }
 }
 
@@ -134,6 +143,16 @@ void VstViewDialog::attachView(IVstPluginInstancePtr instance)
     if (!m_view) {
         return;
     }
+
+    //! NOTE: at shutdown the instance may be unloaded while this editor is still open:
+    //! it then closes the editor first
+    instance->registerEditor(this, [this]() {
+        deinitPluginView();
+        if (m_instance) {
+            m_instance->loadingCompleted().disconnect(this);
+            m_instance = nullptr;
+        }
+    });
 
     if (m_view->isPlatformTypeSupported(currentPlatformUiType()) != Steinberg::kResultTrue) {
         return;

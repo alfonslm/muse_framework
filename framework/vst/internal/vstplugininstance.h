@@ -23,6 +23,10 @@
 #pragma once
 
 #include <atomic>
+#include <map>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 #include "../ivstplugininstance.h"
 
@@ -59,10 +63,29 @@ public:
     PluginMidiMappingPtr midiMapping() const override;
     std::optional<uint32_t> processContextRequirements() const override;
 
+    bool setComponentActive(bool active) override;
+    bool setProcessing(bool processing) override;
+
+    void registerEditor(const void* editor, const std::function<void()>& close) override;
+    void unregisterEditor(const void* editor) override;
+
     void updatePluginConfig(const muse::audio::AudioUnitConfig& config) override;
     void refreshConfig() override;
 
     void load();
+
+    //! Main thread, with the audio engine stopped. Closes the editors, stops processing,
+    //! deactivates and terminates the plugin and releases its module, so that the module's
+    //! bundleExit / ModuleExit runs now. The instance stays alive but is no longer usable.
+    void unload();
+
+    //! Main thread. Releases the plugins of instances that were destroyed on another thread,
+    //! or before the main thread got round to it (see the destructor).
+    static void releaseDeferredResources();
+
+    //! Main thread, at shutdown. From now on, an instance destroyed on the main thread releases
+    //! its plugin at once instead of deferring it to the main event loop, which no longer runs.
+    static void setShuttingDown();
 
     bool isLoaded() const override;
 
@@ -71,6 +94,21 @@ public:
     async::Channel<muse::audio::AudioUnitConfig> pluginSettingsChanged() const override;
 
 private:
+    struct Resources {
+        muse::audio::AudioResourceId resourceId;
+        std::shared_ptr<VstPluginProvider> provider;
+        PluginModulePtr module;
+        bool isComponentActive = false;
+        bool isProcessing = false;
+    };
+
+    Resources takeResources();
+    void closeEditors();
+
+    static void releaseResources(Resources& resources);
+    static std::vector<Resources>& deferredResources();
+    static std::mutex& deferredResourcesMutex();
+
     void syncControllerToComponentState();
     void rescanParams();
     void setPluginConfig(const muse::audio::AudioUnitConfig& config);
@@ -91,5 +129,13 @@ private:
     async::Notification m_loadingCompleted;
 
     std::optional<uint32_t> m_processContextRequirements;
+
+    std::atomic_bool m_isComponentActive = false;
+    std::atomic_bool m_isProcessing = false;
+
+    std::mutex m_editorsMutex;
+    std::map<const void*, std::function<void()> > m_editors;
+
+    std::thread::id m_mainThreadId;
 };
 }

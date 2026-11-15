@@ -23,12 +23,15 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <mutex>
+#include <vector>
 
 #include "../ivstinstancesregister.h"
 #include "async/asyncable.h"
 
 namespace muse::vst {
+class VstPluginInstance;
 class VstInstancesRegister : public IVstInstancesRegister, public async::Asyncable
 {
 public:
@@ -69,7 +72,14 @@ public:
     void unregisterAllInstrPlugin() override;
     void unregisterAllFx() override;
 
+    //! Main thread, at shutdown, with the audio engine stopped.
+    //! Drops the registered instances and unloads every plugin instance still alive
+    //! (see VstPluginInstance::unload), whoever still holds it.
+    void unloadAll();
+
 private:
+    void trackInstance(const std::shared_ptr<VstPluginInstance>& instance);
+
     mutable std::mutex m_mutex;
 
     enum class Type {
@@ -108,5 +118,8 @@ private:
     };
 
     std::map<Key, IVstPluginInstancePtr> m_instances;
+
+    //! Every instance made here, registered or not, to unload them at shutdown
+    std::vector<std::weak_ptr<VstPluginInstance> > m_madeInstances;
 };
 }

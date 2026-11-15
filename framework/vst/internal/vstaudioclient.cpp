@@ -80,6 +80,14 @@ VstAudioClient::~VstAudioClient()
     // The component lifecycle is managed by VstPluginInstance,
     // which defers cleanup to the main thread so that any open
     // editor view is destroyed first (required by ZENOLOGY).
+    //
+    // But stop processing here, on the thread that called process(), so that no process()
+    // call can run after it: the VST3 rules require setProcessing(false) before
+    // setActive(false), and a plugin can still be processing when it is removed
+    // (playing while quitting, or an instrument kept running when playback is stopped).
+    if (m_isActive && m_pluginPtr) {
+        m_pluginPtr->setProcessing(false);
+    }
 }
 
 void VstAudioClient::init(PluginType type, IVstPluginInstancePtr instance)
@@ -383,10 +391,10 @@ PluginComponentPtr VstAudioClient::pluginComponent() const
             return nullptr;
         }
 
-        m_pluginComponent = m_pluginPtr->component();
+        m_pluginComponent = m_pluginPtr->component().get();
     }
 
-    return m_pluginComponent;
+    return PluginComponentPtr(m_pluginComponent);
 }
 
 void VstAudioClient::updateProcessContext(samples_t playbackPositionSamples, const MusicalPosition& musicalPosition)
@@ -738,8 +746,8 @@ void VstAudioClient::ensureActivity()
         return;
     }
 
-    component->setActive(true);
-    processor->setProcessing(true);
+    m_pluginPtr->setComponentActive(true);
+    m_pluginPtr->setProcessing(true);
 
     m_isActive = true;
     m_lastCall = LastCall {};
@@ -773,8 +781,8 @@ void VstAudioClient::disableActivity()
         processStateChange(true);
     }
 
-    processor->setProcessing(false);
-    component->setActive(false);
+    m_pluginPtr->setProcessing(false);
+    m_pluginPtr->setComponentActive(false);
 
     m_isActive = false;
 

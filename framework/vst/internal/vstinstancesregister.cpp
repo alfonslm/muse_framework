@@ -37,6 +37,7 @@ IVstPluginInstancePtr VstInstancesRegister::makeAndRegisterInstrPlugin(const Aud
     std::shared_ptr<VstPluginInstance> instance = std::make_shared<VstPluginInstance>(resourceId);
 
     registerInstrPlugin(trackId, instance);
+    trackInstance(instance);
 
     instance->load();
 
@@ -50,6 +51,7 @@ IVstPluginInstancePtr VstInstancesRegister::makeAndRegisterFxPlugin(const muse::
     std::shared_ptr<VstPluginInstance> instance = std::make_shared<VstPluginInstance>(resourceId);
 
     registerFxPlugin(trackId, chainOrder, instance);
+    trackInstance(instance);
 
     instance->load();
 
@@ -62,6 +64,7 @@ IVstPluginInstancePtr VstInstancesRegister::makeAndRegisterMasterFxPlugin(const 
     std::shared_ptr<VstPluginInstance> instance = std::make_shared<VstPluginInstance>(resourceId);
 
     registerMasterFxPlugin(chainOrder, instance);
+    trackInstance(instance);
 
     instance->load();
 
@@ -205,4 +208,47 @@ void VstInstancesRegister::unregisterAllFx()
     muse::remove_if(m_instances, [](const auto& p) {
         return p.first.type == Type::Effect;
     });
+}
+
+void VstInstancesRegister::trackInstance(const std::shared_ptr<VstPluginInstance>& instance)
+{
+    std::lock_guard lock(m_mutex);
+
+    muse::remove_if(m_madeInstances, [](const std::weak_ptr<VstPluginInstance>& i) {
+        return i.expired();
+    });
+
+    m_madeInstances.push_back(instance);
+}
+
+void VstInstancesRegister::unloadAll()
+{
+    //! MAIN THREAD
+
+    std::map<Key, IVstPluginInstancePtr> registered;
+    std::vector<std::shared_ptr<VstPluginInstance> > alive;
+    {
+        std::lock_guard lock(m_mutex);
+
+        registered.swap(m_instances);
+
+        for (const std::weak_ptr<VstPluginInstance>& i : m_madeInstances) {
+            if (std::shared_ptr<VstPluginInstance> instance = i.lock()) {
+                alive.push_back(std::move(instance));
+            }
+        }
+        m_madeInstances.clear();
+    }
+
+    registered.clear();
+
+    for (const std::shared_ptr<VstPluginInstance>& instance : alive) {
+        //! NOTE: normally the audio engine has destroyed its synths and effects by now, so an
+        //! instance can only be held by an editor that is still open, which unload() closes
+        if (instance.use_count() > 1) {
+            LOGI() << "Plugin instance still referenced at shutdown, unloading it: " << instance->resourceId();
+        }
+
+        instance->unload();
+    }
 }
