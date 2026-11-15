@@ -188,7 +188,6 @@ static std::optional<uint32_t> getSameRequestedSampleCount(const AudioBufferList
     return sampleCount;
 }
 
-
 //! NOTE The latency of the device after it has taken the samples, in frames.
 //! With the safety offset if asked (the time stamps of an IOProc already include it)
 static UInt32 deviceOutputLatencyFrames(AudioDeviceID deviceId, bool withSafetyOffset)
