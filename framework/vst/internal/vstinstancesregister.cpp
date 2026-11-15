@@ -243,8 +243,9 @@ void VstInstancesRegister::unloadAll()
     registered.clear();
 
     for (const std::shared_ptr<VstPluginInstance>& instance : alive) {
-        //! NOTE: normally the audio engine has destroyed its synths and effects by now, so an
-        //! instance can only be held by an editor that is still open, which unload() closes
+        //! NOTE: the audio engine has destroyed its synths and effects by now, but an instance can
+        //! still be held by an editor that is still open (unload() closes it) or by a VST effect
+        //! still kept in the fx resolver's maps (unload() releases the plugin all the same)
         if (instance.use_count() > 1) {
             LOGI() << "Plugin instance still referenced at shutdown, unloading it: " << instance->resourceId();
         }

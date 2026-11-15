@@ -111,9 +111,12 @@ void VSTModule::onDeinit()
 {
     //! NOTE: Release every plugin here, on the main thread and before main() returns, so that each
     //! module's bundleExit / ModuleExit runs. A plugin whose module stays loaded until exit() can
-    //! crash in static destructors (e.g. Kontakt 8 on macOS). The audio module is deinited before
-    //! this one, so the audio engine has stopped calling process() and has destroyed its synths
-    //! and effects; their instances deferred the release to the main event loop, which no longer runs.
+    //! crash in static destructors (e.g. Kontakt 8 on macOS).
+    //! PRECONDITION: the audio module is deinited before this one (the app registers AudioModule
+    //! before VSTModule), so the driver has stopped and the engine worker has been joined: nothing
+    //! calls process() any more, which VstPluginInstance::unload() requires. The engine has also
+    //! destroyed its synths and effects; their instances deferred the release to the main event
+    //! loop, which no longer runs.
     VstPluginInstance::setShuttingDown();
     VstPluginInstance::releaseDeferredResources();
 
