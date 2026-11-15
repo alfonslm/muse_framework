@@ -1,37 +1,11 @@
-Resolves: #NNNNN <!-- Replace `NNNNN` with a GitHub issue number, or a direct link if the issue is not on GitHub -->
+<!-- This fork does not send pull requests upstream; pull requests go to beta. -->
 
-<!-- Add a short description of and motivation for the changes here -->
+## What and why
 
-<!-- Replace `[ ]` with `[x]` to fill the checkboxes below (failure to complete this checklist accurately will result in the PR being closed) -->
+<!-- What this changes and why. Link the alfonslm/MuseScore pull request that pins this change, if any:
+merge this one first, with a merge commit, so the pinned commit stays on beta. -->
 
-- [ ] I signed the [CLA](https://musescore.org/en/cla).
-- [ ] The title of the PR describes the problem it addresses.
-- [ ] Each commit's message describes its purpose and effects, and references the issue it resolves. If changes are extensive, there is a sequence of easily reviewable commits.
-- [ ] The code in the PR follows [the coding rules](https://github.com/musescore/muse_framework/wiki/CodeGuidelines).
-- [ ] The code compiles and runs on my machine, preferably after each commit individually. I have manually tested and verified that my changes fulfil their intended purpose.
-- [ ] No prior attempts to resolve this problem exist, or if they do, I listed them in my PR description and described how I avoided repeating past mistakes.
-- [ ] There are no unnecessary changes.
+## Testing
 
-Complete only if applicable:
-- [ ] I created a unit test or vtest to verify the changes I made.
-- [ ] This PR was created using AI assistance; I have read, understood and complied following the [guidelines for AI-assisted contributions](https://github.com/musescore/muse_framework/blob/main/AI_POLICY.md). The AI tool(s) I used are listed below.
-
-<!-- List all AI tools used in the creation of this PR here -->
-
-
-## Build configuration
-<!--
-Comment `/build` on this PR to dispatch consumer-app builds against this
-framework PR. Edit the lines below to override defaults; remove the
-section entirely to use defaults.
-
-Format: {owner}/{repo}/{branch} (any public fork works).
-
-Available platforms (space-separated):
-  audacity:  linux_x64 macos windows_x64
-  musescore: linux_x64 linux_arm64 macos windows_x64 windows_portable
--->
-audacity: audacity/audacity/master
-audacity platforms: linux_x64
-musescore: musescore/MuseScore/main
-musescore platforms: linux_x64
+<!-- What was built, run or tested, and what was not. The framework's own CI is mostly switched off;
+the MuseScore pull request's CI is usually the build that checks this. -->
