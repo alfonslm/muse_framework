@@ -195,15 +195,15 @@ struct AudioEngineConfig {
     bool autoProcessOnlineSoundsInBackground = false;
     bool isLazyProcessingOfOnlineSoundsEnabled = false;
     bool useSoundFontLowPassFilter = false;
-
-    //! NOTE Don't deactivate plugin instruments when playback stops, and keep processing them.
-    //! A plugin with its own editor and transport (a sequencer, a singing synthesizer) is otherwise
-    //! silent and frozen while the host is stopped
-    bool keepPluginInstrumentsActiveWhenIdle = false;
 };
 
 using AudioSourceName = std::string;
 using AudioUnitConfig = std::map<std::string, std::string>;
+
+//! NOTE A key of an instrument's AudioUnitConfig set by the host, not by the plugin: "1" keeps the plugin instrument
+//! running while playback is stopped, so that a plugin with its own editor and transport (a sequencer, a singing
+//! synthesizer) can still play and be edited. By default plugin instruments are switched off while stopped.
+static const std::string KEEP_RUNNING_WHEN_STOPPED_CONFIG_KEY("keepRunningWhenStopped");
 
 // Audio-pipeline resource id; distinct role from audioplugins::PluginResourceId (both std::string).
 using AudioResourceId = std::string;

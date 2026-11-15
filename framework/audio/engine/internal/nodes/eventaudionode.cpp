@@ -328,6 +328,14 @@ void EventAudioNode::applyInputParams(const AudioInputParams& requiredParams)
         return;
     }
 
+    //! NOTE A change that only concerns how the host runs the same sound (e.g. keep running when stopped)
+    //! doesn't need a new synthesizer; recreating a plugin instrument means loading the plugin again
+    if (m_synth && m_params.isValid() && m_params.resourceMeta == requiredParams.resourceMeta
+        && m_synth->applyConfiguration(requiredParams.configuration)) {
+        m_params = requiredParams;
+        return;
+    }
+
     SynthCtx ctx = currentSynthCtx();
 
     if (m_synth) {

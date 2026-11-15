@@ -58,11 +58,6 @@ void AudioEngineConfiguration::setConfig(const AudioEngineConfig& conf)
         m_conf.useSoundFontLowPassFilter = conf.useSoundFontLowPassFilter;
         m_useSoundFontLowPassFilterChanged.send(m_conf.useSoundFontLowPassFilter);
     }
-
-    if (conf.keepPluginInstrumentsActiveWhenIdle != m_conf.keepPluginInstrumentsActiveWhenIdle) {
-        m_conf.keepPluginInstrumentsActiveWhenIdle = conf.keepPluginInstrumentsActiveWhenIdle;
-        m_keepPluginInstrumentsActiveWhenIdleChanged.send(m_conf.keepPluginInstrumentsActiveWhenIdle);
-    }
 }
 
 bool AudioEngineConfiguration::autoProcessOnlineSoundsInBackground() const
@@ -103,16 +98,6 @@ bool AudioEngineConfiguration::useSoundFontLowPassFilter() const
 async::Channel<bool> AudioEngineConfiguration::useSoundFontLowPassFilterChanged() const
 {
     return m_useSoundFontLowPassFilterChanged;
-}
-
-bool AudioEngineConfiguration::keepPluginInstrumentsActiveWhenIdle() const
-{
-    return m_conf.keepPluginInstrumentsActiveWhenIdle;
-}
-
-async::Channel<bool> AudioEngineConfiguration::keepPluginInstrumentsActiveWhenIdleChanged() const
-{
-    return m_keepPluginInstrumentsActiveWhenIdleChanged;
 }
 
 AudioInputParams AudioEngineConfiguration::defaultAudioInputParams() const

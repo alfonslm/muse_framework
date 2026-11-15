@@ -41,7 +41,6 @@ void VstActionsController::init()
     auto cd = commandDispatcher();
     cd->onRequest(this, VST_USE_OLDVIEW_COMMAND, [this]() { useView(false); return muse::make_ok(); });
     cd->onRequest(this, VST_USE_NEWVIEW_COMMAND, [this]() { useView(true); return muse::make_ok(); });
-    cd->onRequest(this, VST_KEEP_INSTRUMENTS_RUNNING_COMMAND, [this]() { toggleKeepInstrumentsRunning(); return muse::make_ok(); });
     cd->onRequest(this, VST_OPEN_FX_EDITOR_COMMAND, [this](const rcommand::Params& params) { return fxEditor(params); });
     cd->onRequest(this, VST_OPEN_INSTRUMENT_EDITOR_COMMAND, [this](const rcommand::Params& params) { return instEditor(params); });
 
@@ -50,8 +49,7 @@ void VstActionsController::init()
         using namespace muse::rcommand;
         static const std::vector<ActionToCommand> actionToCommands = {
             { "vst-use-oldview", VST_USE_OLDVIEW_COMMAND, {} },
-            { "vst-use-newview", VST_USE_NEWVIEW_COMMAND, {} },
-            { "vst-keep-instruments-running", VST_KEEP_INSTRUMENTS_RUNNING_COMMAND, {} }
+            { "vst-use-newview", VST_USE_NEWVIEW_COMMAND, {} }
         };
 
         rcommand::registerActionToCommand(this, actionToCommands, commandDispatcher(), dispatcher());
@@ -185,17 +183,6 @@ void VstActionsController::useView(bool isNew)
     m_actionCheckedChanged.send({ "vst-use-oldview", "vst-use-newview" });
 }
 
-void VstActionsController::toggleKeepInstrumentsRunning()
-{
-    IF_ASSERT_FAILED(audioConfiguration()) {
-        return;
-    }
-
-    audioConfiguration()->setKeepPluginInstrumentsActiveWhenIdle(!audioConfiguration()->keepPluginInstrumentsActiveWhenIdle());
-
-    m_actionCheckedChanged.send({ "vst-keep-instruments-running" });
-}
-
 bool VstActionsController::isUsedNewView() const
 {
     return configuration()->usedVstView() == "newview";
@@ -207,8 +194,6 @@ bool VstActionsController::actionChecked(const actions::ActionCode& act) const
         return !isUsedNewView();
     } else if (act == "vst-use-newview") {
         return isUsedNewView();
-    } else if (act == "vst-keep-instruments-running") {
-        return audioConfiguration() && audioConfiguration()->keepPluginInstrumentsActiveWhenIdle();
     }
 
     return false;

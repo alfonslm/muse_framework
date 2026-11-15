@@ -31,14 +31,12 @@
 #include "interactive/iinteractiveuriregister.h"
 #include "../ivstinstancesregister.h"
 #include "../ivstconfiguration.h"
-#include "audio/main/iaudioconfiguration.h"
 #include "types/ret.h"
 
 namespace muse::vst {
 class VstActionsController : public actions::Actionable, public rcommand::Commandable, public muse::Contextable
 {
     muse::GlobalInject<IVstConfiguration> configuration;
-    muse::GlobalInject<audio::IAudioConfiguration> audioConfiguration;
     muse::GlobalInject<interactive::IInteractiveUriRegister> interactiveUriRegister;
     muse::GlobalInject<IVstInstancesRegister> instancesRegister;
     muse::ContextInject<actions::IActionsDispatcher> dispatcher = { this };
@@ -60,8 +58,6 @@ public:
 
     void setupUsedView();
     void useView(bool isNew);
-
-    void toggleKeepInstrumentsRunning();
     bool isUsedNewView() const;
     bool actionChecked(const actions::ActionCode& act) const;
     async::Channel<actions::ActionCodeList> actionCheckedChanged() const;
