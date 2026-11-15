@@ -25,6 +25,7 @@
 #include <memory>
 #include <unordered_map>
 #include <variant>
+#include <vector>
 
 namespace muse {
 template<typename KeyType, typename ValType>
@@ -257,9 +258,21 @@ public:
     {
         if (m_dataPtr.use_count() == 1) {
             m_dataPtr->erase(first, last);
-        } else {
-            auto [dfirst, dlast] = detachAndReanchorRange(first, last);
-            m_dataPtr->erase(dfirst, dlast);
+            return;
+        }
+
+        // The detached copy need not iterate in the same order as the shared data
+        // (it doesn't with libc++), so a range can't be found again by its end points.
+        // Remember which keys are in the range, then erase those from the copy.
+        std::vector<KeyType> keys;
+        for (const_iterator it = first; it != last; ++it) {
+            keys.push_back(it->first);
+        }
+
+        ensureDetach();
+
+        for (const KeyType& key : keys) {
+            m_dataPtr->erase(key);
         }
     }
 
@@ -327,16 +340,6 @@ private:
 
         const_iterator dhint = detachAndReanchor(hint);
         return op(dhint);
-    }
-
-    std::pair<const_iterator, const_iterator> detachAndReanchorRange(const_iterator first, const_iterator last)
-    {
-        const Anchor firstAnchor = describeAnchor(first);
-        const Anchor lastAnchor = describeAnchor(last);
-
-        ensureDetach();
-
-        return { resolveAnchor(firstAnchor), resolveAnchor(lastAnchor) };
     }
 
     DataPtr m_dataPtr = nullptr;

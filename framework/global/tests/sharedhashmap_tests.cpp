@@ -21,6 +21,8 @@
  */
 #include <gtest/gtest.h>
 
+#include <iterator>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -80,6 +82,66 @@ TEST_F(Global_Types_SharedHashMapTests, EraseRange_Partial_WhileShared)
     EXPECT_FALSE(copy.contains(2));
     EXPECT_EQ(original.size(), 4);
     EXPECT_TRUE(original.contains(2));
+}
+
+TEST_F(Global_Types_SharedHashMapTests, EraseRange_Partial_WhileShared_ErasesExactlyTheRange)
+{
+    // [GIVEN] A map large enough that a copy of the underlying std::unordered_map
+    //         may iterate in a different order (it does with libc++)
+    SharedHashMap<int, std::string> original;
+    for (int i = 0; i < 100; ++i) {
+        original.insert({ i, std::to_string(i) });
+    }
+    SharedHashMap<int, std::string> copy = original;
+
+    // [GIVEN] A range in the middle, and the keys it covers
+    auto first = std::next(std::as_const(copy).begin(), 10);
+    auto last = std::next(first, 50);
+
+    std::set<int> keysInRange;
+    for (auto it = first; it != last; ++it) {
+        keysInRange.insert(it->first);
+    }
+    ASSERT_EQ(keysInRange.size(), 50);
+
+    // [WHEN]
+    copy.erase(first, last);
+
+    // [THEN] Exactly the keys of the range are gone
+    EXPECT_EQ(copy.size(), 50);
+    for (int i = 0; i < 100; ++i) {
+        EXPECT_EQ(copy.contains(i), keysInRange.count(i) == 0) << "key " << i;
+    }
+
+    // [THEN] The original is untouched
+    EXPECT_EQ(original.size(), 100);
+}
+
+TEST_F(Global_Types_SharedHashMapTests, EraseRange_ToEnd_WhileShared)
+{
+    // [GIVEN]
+    SharedHashMap<int, std::string> original;
+    for (int i = 0; i < 100; ++i) {
+        original.insert({ i, std::to_string(i) });
+    }
+    SharedHashMap<int, std::string> copy = original;
+
+    auto first = std::next(std::as_const(copy).begin(), 30);
+
+    std::set<int> keysInRange;
+    for (auto it = first; it != std::as_const(copy).end(); ++it) {
+        keysInRange.insert(it->first);
+    }
+
+    // [WHEN]
+    copy.erase(first, copy.cend());
+
+    // [THEN]
+    EXPECT_EQ(copy.size(), 30);
+    for (int i = 0; i < 100; ++i) {
+        EXPECT_EQ(copy.contains(i), keysInRange.count(i) == 0) << "key " << i;
+    }
+    EXPECT_EQ(original.size(), 100);
 }
 
 TEST_F(Global_Types_SharedHashMapTests, EraseRange_Empty_WhileShared_IsNoOp)

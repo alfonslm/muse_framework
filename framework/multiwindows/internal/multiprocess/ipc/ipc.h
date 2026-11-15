@@ -34,11 +34,30 @@
 class QLocalSocket;
 
 namespace muse::ipc {
-#ifdef MUSE_APP_UNSTABLE
-static const QString SERVER_NAME("musescore-app-ipc-" MUSE_APP_VERSION_MAJOR "-development");
+// The server name starts with the app's name, so that two different apps built on the
+// framework never talk to each other's instances.
+inline QString serverName()
+{
+#ifdef MUSE_APP_NAME_MACHINE_READABLE
+    QString appName = QString(MUSE_APP_NAME_MACHINE_READABLE).toLower();
 #else
-static const QString SERVER_NAME("musescore-app-ipc-" MUSE_APP_VERSION_MAJOR);
+    QString appName = QStringLiteral("musescore");
 #endif
+
+    // MuseScore Studio keeps the name it has always had,
+    // so that its builds from before and after this was introduced still find each other
+    if (appName == QLatin1String("musescorestudio")) {
+        appName = QStringLiteral("musescore");
+    }
+
+#ifdef MUSE_APP_UNSTABLE
+    return appName + QStringLiteral("-app-ipc-" MUSE_APP_VERSION_MAJOR "-development");
+#else
+    return appName + QStringLiteral("-app-ipc-" MUSE_APP_VERSION_MAJOR);
+#endif
+}
+
+static const QString SERVER_NAME = serverName();
 
 using ID = QString;
 
