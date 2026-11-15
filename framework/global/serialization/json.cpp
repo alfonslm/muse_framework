@@ -23,6 +23,10 @@
 
 #include <cmath>
 #include <cassert>
+#include <iomanip>
+#include <iterator>
+#include <locale>
+#include <sstream>
 
 #define PICOJSON_USE_LOCALE 1
 #define PICOJSON_ASSERT assert
@@ -745,9 +749,113 @@ JsonDocument::JsonDocument(JsonArray a)
 {
 }
 
+//! NOTE Numbers are written here, not by picojson, so that reading back what was written gives the same number:
+//! - whole numbers in full (up to 2^53, the largest that a double holds exactly);
+//! - other numbers with as few digits as it takes to read back the same double (0.1 is "0.1", 1.0 / 3.0 is "0.3333333333333333").
+//! The output doesn't depend on the locale.
+static std::string numberToString(double n)
+{
+    if (!std::isfinite(n)) {
+        // JSON has no NaN or infinity
+        return "null";
+    }
+
+    static constexpr double MAX_EXACT_WHOLE = 9007199254740992.0; // 2^53
+
+    double whole = 0.0;
+    if (std::fabs(n) < MAX_EXACT_WHOLE && std::modf(n, &whole) == 0.0) {
+        return std::to_string(static_cast<long long>(n));
+    }
+
+    std::string str;
+    for (int precision = 15; precision <= 17; ++precision) {
+        std::ostringstream out;
+        out.imbue(std::locale::classic());
+        out << std::setprecision(precision) << n;
+        str = out.str();
+
+        std::istringstream in(str);
+        in.imbue(std::locale::classic());
+        double back = 0.0;
+        in >> back;
+        if (back == n) {
+            break;
+        }
+    }
+
+    return str;
+}
+
+static constexpr int COMPACT = -1;
+
+static void newLine(std::string& out, int indent)
+{
+    out += '\n';
+    out.append(static_cast<size_t>(indent) * picojson::INDENT_WIDTH, ' ');
+}
+
+//! NOTE The same layout as picojson::value::serialize, except for numbers
+static void serialize(const picojson::value& val, std::string& out, int indent)
+{
+    const bool indented = indent != COMPACT;
+
+    if (val.is<picojson::array>()) {
+        const picojson::array& arr = val.get<picojson::array>();
+        const int inner = indented ? indent + 1 : COMPACT;
+
+        out += '[';
+        for (auto it = arr.begin(); it != arr.end(); ++it) {
+            if (it != arr.begin()) {
+                out += ',';
+            }
+            if (indented) {
+                newLine(out, inner);
+            }
+            serialize(*it, out, inner);
+        }
+        if (indented && !arr.empty()) {
+            newLine(out, indent);
+        }
+        out += ']';
+    } else if (val.is<picojson::object>()) {
+        const picojson::object& obj = val.get<picojson::object>();
+        const int inner = indented ? indent + 1 : COMPACT;
+
+        out += '{';
+        for (auto it = obj.begin(); it != obj.end(); ++it) {
+            if (it != obj.begin()) {
+                out += ',';
+            }
+            if (indented) {
+                newLine(out, inner);
+            }
+            picojson::serialize_str(it->first, std::back_inserter(out));
+            out += ':';
+            if (indented) {
+                out += ' ';
+            }
+            serialize(it->second, out, inner);
+        }
+        if (indented && !obj.empty()) {
+            newLine(out, indent);
+        }
+        out += '}';
+    } else if (val.is<double>()) {
+        out += numberToString(val.get<double>());
+    } else {
+        // null, bool, string
+        val.serialize(std::back_inserter(out));
+    }
+
+    if (indent == 0) {
+        out += '\n';
+    }
+}
+
 ByteArray JsonDocument::toJson(Format format) const
 {
-    std::string json = m_data->val.serialize(format == Format::Indented);
+    std::string json;
+    serialize(m_data->val, json, format == Format::Indented ? 0 : COMPACT);
     return ByteArray(json.c_str(), json.size());
 }
 
