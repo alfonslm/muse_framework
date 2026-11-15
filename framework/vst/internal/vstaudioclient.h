@@ -99,7 +99,11 @@ private:
     muse::audio::gain_t m_volumeGain = 1.f; // 0.0 - 1.0
 
     IVstPluginInstancePtr m_pluginPtr = nullptr;
-    mutable PluginComponentPtr m_pluginComponent = nullptr;
+    //! NOTE: not a reference: the instance's provider owns the component, and outlives this client
+    //! (the client holds the instance), except at shutdown, when the instance may unload the plugin
+    //! while the client still exists. Holding a reference would then release the component after its
+    //! module had been unloaded.
+    mutable Steinberg::Vst::IComponent* m_pluginComponent = nullptr;
 
     std::vector<int> m_activeOutputBusses;
     std::vector<int> m_activeInputBusses;

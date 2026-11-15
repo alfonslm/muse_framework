@@ -21,6 +21,8 @@
  */
 #pragma once
 
+#include <functional>
+
 #include "global/async/notification.h"
 
 #include "vsttypes.h"
@@ -44,6 +46,17 @@ public:
     virtual PluginControllerPtr controller() const = 0;
     virtual PluginComponentPtr component() const = 0;
     virtual PluginMidiMappingPtr midiMapping() const = 0;
+
+    //! Audio processing state: IComponent::setActive and IAudioProcessor::setProcessing.
+    //! The audio client switches it through the instance, so that the instance knows
+    //! how to stop and deactivate the plugin when it is released.
+    virtual bool setComponentActive(bool active) = 0;
+    virtual bool setProcessing(bool processing) = 0;
+
+    //! Main thread. An open editor registers how to close itself (detach its IPlugView),
+    //! so that the instance can close it before the plugin is deactivated and unloaded.
+    virtual void registerEditor(const void* editor, const std::function<void()>& close) = 0;
+    virtual void unregisterEditor(const void* editor) = 0;
 
     virtual void updatePluginConfig(const muse::audio::AudioUnitConfig& config) = 0;
     virtual void refreshConfig() = 0;
