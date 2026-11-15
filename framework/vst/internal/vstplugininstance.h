@@ -74,9 +74,13 @@ public:
 
     void load();
 
-    //! Main thread, with the audio engine stopped. Closes the editors, stops processing,
+    //! Main thread, at shutdown only. Closes the editors, stops processing,
     //! deactivates and terminates the plugin and releases its module, so that the module's
     //! bundleExit / ModuleExit runs now. The instance stays alive but is no longer usable.
+    //! PRECONDITION: the audio engine and driver have stopped (no process() call can run).
+    //! Nothing synchronises this with the audio threads that read the provider
+    //! (setComponentActive, setProcessing, component()), and an audio client's cached
+    //! component pointer dangles afterwards. VSTModule::onDeinit() is the only caller.
     void unload();
 
     //! Main thread. Releases the plugins of instances that were destroyed on another thread,

@@ -22,6 +22,8 @@
 
 #include "vstplugininstance.h"
 
+#include <cassert>
+
 #include "modularity/ioc.h"
 #include "vstpluginprovider.h"
 #include "vsttrace.h"
@@ -184,7 +186,8 @@ void VstPluginInstance::setShuttingDown()
 
 void VstPluginInstance::unload()
 {
-    //! MAIN THREAD
+    //! MAIN THREAD, audio stopped: see the precondition in the header
+    assert(std::this_thread::get_id() == m_mainThreadId);
 
     m_isLoaded = false;
 

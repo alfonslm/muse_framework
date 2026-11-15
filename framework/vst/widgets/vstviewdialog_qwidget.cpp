@@ -117,6 +117,13 @@ tresult VstViewDialog::resizeView(IPlugView* view, ViewRect* newSize)
 
 void VstViewDialog::wrapPluginView()
 {
+    //! NOTE: detach from a previous instance, so that it keeps no close callback on this dialog
+    if (m_instance) {
+        deinitPluginView();
+        m_instance->loadingCompleted().disconnect(this);
+        m_instance = nullptr;
+    }
+
     m_instance = instancesRegister()->instanceById(m_instanceId);
     if (!m_instance) {
         return;
