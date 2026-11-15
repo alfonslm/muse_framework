@@ -40,6 +40,8 @@
 #include "runtime.h"
 #include "translation.h"
 
+#include "audio/common/outputlatency.h"
+
 #include <pipewire/pipewire.h>
 #include <spa/debug/dict.h>
 #include <spa/debug/pod.h>
@@ -49,6 +51,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <time.h>
 #include <condition_variable>
 #include <mutex>
 #include <sstream>
@@ -401,6 +404,7 @@ private:
     // C-style callbacks and their corresponding C++ methods
     static void c_process(void* userdata);
     void process();
+    void reportOutputLatency();
 
     pw_core* m_core = nullptr;
 
@@ -419,6 +423,8 @@ PwStream::PwStream(pw_core* core, const IAudioDriver::Spec& spec, const std::str
     , m_events{}
     , m_spec{spec}
 {
+    OutputLatency::reset();
+
     m_events.version = PW_VERSION_STREAM_EVENTS;
     m_events.process = c_process;
 
@@ -514,6 +520,8 @@ void PwStream::process()
     const auto numFrames = b->requested ? SPA_MIN(b->requested, maxFrames) : maxFrames;
     const auto len = numFrames * m_stride;
 
+    reportOutputLatency();
+
     m_spec.callback(dst, len);
 
     buf->datas[0].chunk->offset = 0;
@@ -521,6 +529,47 @@ void PwStream::process()
     buf->datas[0].chunk->size = len;
 
     pw_stream_queue_buffer(m_stream, b);
+}
+
+//! NOTE How long it takes for the next sample we queue to be played by the device.
+//! See the description of pw_time in pipewire/stream.h
+void PwStream::reportOutputLatency()
+{
+    const double sampleRate = static_cast<double>(m_spec.output.sampleRate);
+    if (sampleRate <= 0.0) {
+        return;
+    }
+
+    pw_time time {};
+#if PW_CHECK_VERSION(0, 3, 50)
+    if (pw_stream_get_time_n(m_stream, &time, sizeof(time)) != 0) {
+        return;
+    }
+    const double bufferedSecs = static_cast<double>(time.buffered) / sampleRate;
+#else
+    if (pw_stream_get_time(m_stream, &time) != 0) {
+        return;
+    }
+    const double bufferedSecs = 0.0;
+#endif
+
+    if (time.rate.num == 0 || time.rate.denom == 0 || time.delay < 0) {
+        return;
+    }
+
+    double delaySecs = static_cast<double>(time.delay) * time.rate.num / time.rate.denom;
+
+    // The delay was captured at time.now (CLOCK_MONOTONIC), usually at the start of the graph cycle
+    timespec ts {};
+    if (time.now > 0 && clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+        const int64_t nowNs = static_cast<int64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
+        const double elapsedSecs = static_cast<double>(nowNs - time.now) / 1e9;
+        if (elapsedSecs > 0.0 && elapsedSecs < 1.0) {
+            delaySecs = std::max(0.0, delaySecs - elapsedSecs);
+        }
+    }
+
+    OutputLatency::report(delaySecs + bufferedSecs);
 }
 
 PwAudioDriver::PwAudioDriver()

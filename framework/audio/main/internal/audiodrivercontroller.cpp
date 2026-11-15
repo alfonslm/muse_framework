@@ -24,6 +24,7 @@
 
 #include "common/audiotaskscheduler.h"
 #include "common/iaudiotaskscheduler.h"
+#include "common/outputlatency.h"
 #include "global/async/async.h"
 
 #include "muse_framework_config.h"
@@ -176,6 +177,10 @@ void AudioDriverController::setNewDriver(IAudioDriverPtr newDriver)
     }
 
     m_audioDriver = newDriver;
+
+    //! NOTE The latency measured by the previous driver is not relevant anymore
+    //! (and the new driver might not measure it at all)
+    OutputLatency::reset();
 
     if (m_audioDriver) {
         // subscribe

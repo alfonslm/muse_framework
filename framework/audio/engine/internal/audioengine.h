@@ -28,6 +28,7 @@
 
 #include "iaudioengine.h"
 #include "iexecoperation.h"
+#include "iprocesstiming.h"
 
 #include "global/types/ret.h"
 
@@ -35,7 +36,7 @@
 
 namespace muse::audio::engine {
 class AudioContext;
-class AudioEngine : public IAudioEngine, public IExecOperation
+class AudioEngine : public IAudioEngine, public IExecOperation, public IProcessTiming
 {
 public:
     AudioEngine();
@@ -52,10 +53,13 @@ public:
     OutputSpec outputSpec() const override;
     async::Channel<OutputSpec> outputSpecChanged() const override;
 
-    samples_t process(float* buffer, samples_t samplesPerChannel) override;
+    samples_t process(float* buffer, samples_t samplesPerChannel, int64_t blockPresentationTimeNs) override;
 
     // IExecOperation
     void execOperation(OperationType type, const Operation& func) override;
+
+    // IProcessTiming
+    int64_t blockPresentationTimeNs() const override;
 
 private:
 
@@ -68,6 +72,8 @@ private:
 
     std::map<AudioCtxId, std::shared_ptr<AudioContext> > m_contexts;
     std::shared_ptr<MixerNode> m_mixer;
+
+    int64_t m_blockPresentationTimeNs = 0; // processing thread only
 
     std::atomic<bool> m_processing = false;
     std::atomic<OperationType> m_operationType = OperationType::Undefined;

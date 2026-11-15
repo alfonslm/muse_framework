@@ -38,11 +38,11 @@ using namespace muse;
 using namespace muse::audio;
 using namespace muse::audio::engine;
 
-AudioContext::AudioContext(const AudioCtxId& ctxId, IExecOperation* execOperation)
+AudioContext::AudioContext(const AudioCtxId& ctxId, IExecOperation* execOperation, const IProcessTiming* processTiming)
     : m_ctxId(ctxId)
     , m_execOperation(execOperation)
 {
-    m_player = std::make_shared<ContextPlayer>(this, execOperation);
+    m_player = std::make_shared<ContextPlayer>(this, execOperation, processTiming);
 
     m_playheadNode = std::make_shared<PlayheadNode>(std::static_pointer_cast<IPlayhead>(m_player));
     m_mixer = std::make_shared<Mixer>();
@@ -771,6 +771,18 @@ async::Channel<secs_t> AudioContext::playbackPositionChanged() const
 {
     ONLY_AUDIO_ENGINE_THREAD;
     return m_player->playbackPositionChanged();
+}
+
+PlaybackPositionAnchor AudioContext::playbackPositionAnchor() const
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+    return m_player->playbackPositionAnchor();
+}
+
+async::Channel<PlaybackPositionAnchor> AudioContext::playbackPositionAnchorChanged() const
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+    return m_player->playbackPositionAnchorChanged();
 }
 
 // Export

@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "global/types/retval.h"
 #include "global/async/channel.h"
 #include "global/async/asyncable.h"
@@ -31,12 +33,13 @@
 
 #include "iexecoperation.h"
 #include "igettracksource.h"
+#include "iprocesstiming.h"
 
 namespace muse::audio::engine {
 class ContextPlayer : public IEnginePlayer, public IPlayhead, public async::Asyncable
 {
 public:
-    explicit ContextPlayer(IGetTrackSource* getTracks, IExecOperation* execOperation);
+    explicit ContextPlayer(IGetTrackSource* getTracks, IExecOperation* execOperation, const IProcessTiming* processTiming = nullptr);
 
     async::Promise<Ret> prepareToPlay() override;
 
@@ -59,6 +62,9 @@ public:
 
     secs_t playbackPosition() const override;
     async::Channel<secs_t> playbackPositionChanged() const override;
+
+    PlaybackPositionAnchor playbackPositionAnchor() const override;
+    async::Channel<PlaybackPositionAnchor> playbackPositionAnchorChanged() const override;
 
     // IPlayhead interface
     void forward(const TimePosition& delta) override;
@@ -96,12 +102,19 @@ private:
 
     IGetTrackSource* m_trackSource = nullptr;
     IExecOperation* m_execOperation = nullptr;
+    const IProcessTiming* m_processTiming = nullptr;
 
     ValCh<PlaybackStatus> m_status;
     ValCh<bool> m_isActive;
 
     TimePosition m_currentPosition;
     async::Channel<secs_t> m_timeChanged;
+
+    //! NOTE Positions linked to the time they are heard.
+    //! The epoch is changed by an explicit position change (engine thread)
+    //! and read to stamp the rendered blocks (processing thread)
+    async::Channel<PlaybackPositionAnchor> m_anchorChanged;
+    std::atomic<uint32_t> m_anchorEpoch = 0;
 
     secs_t m_timeDuration = 0.;
     secs_t m_countDown = 0.;

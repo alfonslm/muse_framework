@@ -86,6 +86,29 @@ TEST_F(Audio_RpcPackerTests, OutputSpec)
     EXPECT_TRUE(origin == unpacked);
 }
 
+TEST_F(Audio_RpcPackerTests, PlaybackPositionAnchor)
+{
+    PlaybackPositionAnchor origin;
+    origin.position = 12.345;
+    origin.duration = 0.0232;
+    origin.presentationTimeNs = 123456789012345;
+    origin.epoch = 42;
+
+    KNOWN_FIELDS(origin,
+                 origin.position,
+                 origin.duration,
+                 origin.presentationTimeNs,
+                 origin.epoch);
+
+    ByteArray data = rpc::RpcPacker::pack(origin);
+
+    PlaybackPositionAnchor unpacked;
+    bool ok = rpc::RpcPacker::unpack(data, unpacked);
+
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(origin == unpacked);
+}
+
 TEST_F(Audio_RpcPackerTests, AudioResourceMeta)
 {
     AudioResourceMeta origin;

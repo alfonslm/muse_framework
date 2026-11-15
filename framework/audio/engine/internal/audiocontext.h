@@ -31,6 +31,7 @@
 #include "../iaudioengineconfiguration.h"
 
 #include "iexecoperation.h"
+#include "iprocesstiming.h"
 #include "igettracksource.h"
 #include "mixer.h"
 #include "nodes/playheadnode.h"
@@ -51,7 +52,7 @@ class AudioContext : public AudioNode<AudioContextTag>, public IAudioContext, pu
     GlobalInject<IAudioEngineConfiguration> configuration;
 
 public:
-    AudioContext(const AudioCtxId& ctxId, IExecOperation* execOperation);
+    AudioContext(const AudioCtxId& ctxId, IExecOperation* execOperation, const IProcessTiming* processTiming = nullptr);
 
     AudioCtxId id() const override;
 
@@ -124,6 +125,8 @@ public:
     async::Channel<PlaybackStatus> playbackStatusChanged() const override;
     secs_t playbackPosition() const override;
     async::Channel<secs_t> playbackPositionChanged() const override;
+    PlaybackPositionAnchor playbackPositionAnchor() const override;
+    async::Channel<PlaybackPositionAnchor> playbackPositionAnchorChanged() const override;
 
     // Export
     async::Promise<Ret> saveSoundTrack(io::IODevice& dstDevice, const SoundTrackFormat& format) override;

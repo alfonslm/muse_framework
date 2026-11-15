@@ -25,6 +25,7 @@
 #include <QtGlobal>
 
 #include "global/settings.h"
+#include "global/serialization/json.h"
 
 #include "audio/common/soundfonttypes.h"
 #include "audio/common/audioutils.h"
@@ -43,6 +44,7 @@ static constexpr sample_rate_t DEFAULT_SAMPLE_RATE = 44100;
 //TODO: add other setting: audio device etc
 static const Settings::Key AUDIO_DRIVER_KEY("audio", "io/audioDriver");
 static const Settings::Key AUDIO_OUTPUT_DEVICE_ID_KEY("audio", "io/outputDevice");
+static const Settings::Key AUDIO_OUTPUT_LATENCY_COMPENSATION_KEY("audio", "io/outputLatencyCompensation");
 static const Settings::Key AUDIO_BUFFER_SIZE_KEY("audio", "io/bufferSize");
 static const Settings::Key AUDIO_SAMPLE_RATE_KEY("audio", "io/sampleRate");
 static const Settings::Key AUDIO_MEASURE_INPUT_LAG("audio", "io/measureInputLag");
@@ -73,6 +75,11 @@ void AudioConfiguration::init()
     settings()->setDefaultValue(AUDIO_OUTPUT_DEVICE_ID_KEY, Val(DEFAULT_DEVICE_ID));
     settings()->valueChanged(AUDIO_OUTPUT_DEVICE_ID_KEY).onReceive(nullptr, [this](const Val&) {
         m_audioOutputDeviceIdChanged.notify();
+    });
+
+    settings()->setDefaultValue(AUDIO_OUTPUT_LATENCY_COMPENSATION_KEY, Val(std::string()));
+    settings()->valueChanged(AUDIO_OUTPUT_LATENCY_COMPENSATION_KEY).onReceive(nullptr, [this](const Val&) {
+        m_outputLatencyCompensationChanged.notify();
     });
 
     settings()->setDefaultValue(AUDIO_SAMPLE_RATE_KEY, Val(static_cast<int>(DEFAULT_SAMPLE_RATE)));
@@ -150,6 +157,54 @@ void AudioConfiguration::setAudioOutputDeviceId(const std::string& deviceId)
 async::Notification AudioConfiguration::audioOutputDeviceIdChanged() const
 {
     return m_audioOutputDeviceIdChanged;
+}
+
+//! NOTE The compensations are stored as a json object: { "<driver>|<device id>": msecs, ... }
+static JsonObject readOutputLatencyCompensations(const std::string& json)
+{
+    if (json.empty()) {
+        return JsonObject();
+    }
+
+    std::string err;
+    JsonDocument doc = JsonDocument::fromJson(ByteArray::fromRawData(json.data(), json.size()), &err);
+    if (!err.empty() || !doc.isObject()) {
+        LOGE() << "failed parse output latency compensations, err: " << err;
+        return JsonObject();
+    }
+
+    return doc.rootObject();
+}
+
+std::string AudioConfiguration::outputLatencyCompensationKey(const AudioDeviceID& deviceId) const
+{
+    //! NOTE The device ids of different drivers are not related
+    return currentAudioDriverName() + "|" + deviceId;
+}
+
+msecs_t AudioConfiguration::outputLatencyCompensation(const AudioDeviceID& deviceId) const
+{
+    const JsonObject compensations = readOutputLatencyCompensations(
+        settings()->value(AUDIO_OUTPUT_LATENCY_COMPENSATION_KEY).toString());
+
+    const std::string key = outputLatencyCompensationKey(deviceId);
+    return msecs_t(compensations.contains(key) ? compensations.value(key).toInt() : 0);
+}
+
+void AudioConfiguration::setOutputLatencyCompensation(const AudioDeviceID& deviceId, msecs_t compensation)
+{
+    JsonObject compensations = readOutputLatencyCompensations(
+        settings()->value(AUDIO_OUTPUT_LATENCY_COMPENSATION_KEY).toString());
+
+    compensations.set(outputLatencyCompensationKey(deviceId), static_cast<int>(compensation.raw()));
+
+    const ByteArray json = JsonDocument(compensations).toJson(JsonDocument::Format::Compact);
+    settings()->setSharedValue(AUDIO_OUTPUT_LATENCY_COMPENSATION_KEY, Val(std::string(json.constChar(), json.size())));
+}
+
+async::Notification AudioConfiguration::outputLatencyCompensationChanged() const
+{
+    return m_outputLatencyCompensationChanged;
 }
 
 audioch_t AudioConfiguration::audioChannelsCount() const

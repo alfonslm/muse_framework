@@ -55,6 +55,11 @@ public:
 
     virtual secs_t playbackPosition() const = 0;
     virtual async::Channel<secs_t> playbackPositionChanged() const = 0;
+
+    //! Positions linked to the time they are heard, see PlaybackPositionAnchor
+    //! playbackPositionAnchor - the immediate anchor of the current position
+    virtual PlaybackPositionAnchor playbackPositionAnchor() const = 0;
+    virtual async::Channel<PlaybackPositionAnchor> playbackPositionAnchorChanged() const = 0;
 };
 using IEnginePlayerPtr = std::shared_ptr<IEnginePlayer>;
 }

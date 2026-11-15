@@ -117,6 +117,7 @@ enum class MsgCode {
     ResetLoop,
     GetPlaybackStatus,
     GetPlaybackPosition,
+    GetPlaybackPositionAnchor,
 
     // Signals
     GetSignalChanges,
@@ -144,6 +145,7 @@ enum class MsgCode {
     AutomatedControlParamsStream,
     PlaybackStatusStream,
     PlaybackPositionStream,
+    PlaybackPositionAnchorStream,
     InputProcessingProgressStream,
     SaveSoundTrackProgressStream
 };
@@ -217,6 +219,7 @@ inline std::string to_string(MsgCode m)
     case MsgCode::ResetLoop: return "ResetLoop";
     case MsgCode::GetPlaybackStatus: return "GetPlaybackStatus";
     case MsgCode::GetPlaybackPosition: return "GetPlaybackPosition";
+    case MsgCode::GetPlaybackPositionAnchor: return "GetPlaybackPositionAnchor";
 
     // Signals
     case MsgCode::GetSignalChanges: return "GetSignalChanges";
@@ -243,6 +246,7 @@ inline std::string to_string(MsgCode m)
     case MsgCode::AutomatedControlParamsStream: return "AutomatedControlParamsStream";
     case MsgCode::PlaybackStatusStream: return "PlaybackStatusStream";
     case MsgCode::PlaybackPositionStream: return "PlaybackPositionStream";
+    case MsgCode::PlaybackPositionAnchorStream: return "PlaybackPositionAnchorStream";
     case MsgCode::InputProcessingProgressStream: return "InputProcessingProgressStream";
     case MsgCode::SaveSoundTrackProgressStream: return "SaveSoundTrackProgressStream";
     }

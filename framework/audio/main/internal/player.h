@@ -58,6 +58,7 @@ public:
 
     secs_t playbackPosition() const override;
     async::Channel<secs_t> playbackPositionChanged() const override;
+    async::Channel<PlaybackPositionAnchor> playbackPositionAnchorChanged() const override;
 
 private:
 
@@ -68,6 +69,7 @@ private:
 
     secs_t m_playbackPosition = 0.0;
     async::Channel<secs_t> m_playbackPositionChanged;
+    async::Channel<PlaybackPositionAnchor> m_playbackPositionAnchorChanged;
 };
 }
 

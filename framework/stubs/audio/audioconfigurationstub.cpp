@@ -153,6 +153,20 @@ async::Channel<bool> AudioConfigurationStub::useSoundFontLowPassFilterChanged() 
     return {};
 }
 
+msecs_t AudioConfigurationStub::outputLatencyCompensation(const AudioDeviceID&) const
+{
+    return msecs_t(0);
+}
+
+void AudioConfigurationStub::setOutputLatencyCompensation(const AudioDeviceID&, msecs_t)
+{
+}
+
+async::Notification AudioConfigurationStub::outputLatencyCompensationChanged() const
+{
+    return async::Notification();
+}
+
 bool AudioConfigurationStub::shouldMeasureInputLag() const
 {
     return false;

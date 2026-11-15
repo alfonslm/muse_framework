@@ -24,6 +24,7 @@
 
 #include "audio/common/audiosanitizer.h"
 #include "audio/common/audioerrors.h"
+#include "audio/common/audioclock.h"
 
 #include "log.h"
 
@@ -32,9 +33,10 @@ using namespace muse::audio;
 using namespace muse::audio::engine;
 using namespace muse::async;
 
-ContextPlayer::ContextPlayer(IGetTrackSource* getTracks, IExecOperation* execOperation)
+ContextPlayer::ContextPlayer(IGetTrackSource* getTracks, IExecOperation* execOperation, const IProcessTiming* processTiming)
     : m_trackSource(getTracks)
     , m_execOperation(execOperation)
+    , m_processTiming(processTiming)
 {
     m_status.set(PlaybackStatus::Stopped);
     m_isActive.set(false);
@@ -83,6 +85,7 @@ void ContextPlayer::forward(const TimePosition& delta)
         return;
     }
 
+    const TimePosition blockStart = m_currentPosition;
     const TimePosition newTime = proc_onTimeChanged(delta);
 
     if (m_currentPosition == newTime) {
@@ -91,6 +94,19 @@ void ContextPlayer::forward(const TimePosition& delta)
 
     m_currentPosition = newTime;
     m_timeChanged.send(m_currentPosition.time());
+
+    //! NOTE The block that has just been rendered starts at `blockStart`,
+    //! and it is not heard yet: tell when it will be.
+    //! If we don't know (no driver timing), assume that it is heard right now
+    PlaybackPositionAnchor anchor;
+    anchor.position = blockStart.time();
+    anchor.duration = delta.time();
+    anchor.presentationTimeNs = m_processTiming ? m_processTiming->blockPresentationTimeNs() : 0;
+    if (anchor.presentationTimeNs == PlaybackPositionAnchor::IMMEDIATE) {
+        anchor.presentationTimeNs = steadyClockNowNs();
+    }
+    anchor.epoch = m_anchorEpoch.load(std::memory_order_relaxed);
+    m_anchorChanged.send(anchor);
 }
 
 TimePosition ContextPlayer::proc_onTimeChanged(const TimePosition& delta)
@@ -205,6 +221,11 @@ void ContextPlayer::seek(const TimePosition& position, const bool flushSound)
     m_flushSoundOnSeek = flushSound;
     m_currentPosition = position;
     m_timeChanged.send(m_currentPosition.time());
+
+    //! NOTE The position is changed explicitly: the anchors made before are obsolete
+    m_anchorEpoch.fetch_add(1, std::memory_order_relaxed);
+    m_anchorChanged.send(playbackPositionAnchor());
+
     seekAllTracks(position);
     m_flushSoundOnSeek = true;
 }
@@ -395,4 +416,22 @@ void ContextPlayer::prepareAllTracksToPlay(AllTracksReadyCallback allTracksReady
             }
         }, Asyncable::Mode::SetReplace);
     }
+}
+
+PlaybackPositionAnchor ContextPlayer::playbackPositionAnchor() const
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    PlaybackPositionAnchor anchor;
+    anchor.position = m_currentPosition.time();
+    anchor.duration = 0.0;
+    anchor.presentationTimeNs = PlaybackPositionAnchor::IMMEDIATE;
+    anchor.epoch = m_anchorEpoch.load(std::memory_order_relaxed);
+    return anchor;
+}
+
+Channel<PlaybackPositionAnchor> ContextPlayer::playbackPositionAnchorChanged() const
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+    return m_anchorChanged;
 }

@@ -29,6 +29,8 @@
 #include "common/iasiodrv.h"
 #include "host/asiodrivers.h"
 
+#include "audio/common/outputlatency.h"
+
 #include "log.h"
 
 using namespace muse;
@@ -67,6 +69,9 @@ struct AsioData {
 
     // ASIOOutputReady()
     bool postOutput = false;
+
+    // ASIOGetLatencies()
+    double outputLatencySecs = -1.0; // unknown
 
     // ASIOCallbacks
     ASIOCallbacks callbacks;
@@ -134,6 +139,10 @@ static void s_bufferSwitch(long index, ASIOBool /*processNow*/)
     static std::vector<float> proc_buf;
     if (proc_buf.size() != procSamplesTotal) {
         proc_buf.resize(procSamplesTotal);
+    }
+
+    if (s_adata.outputLatencySecs >= 0.0) {
+        OutputLatency::report(s_adata.outputLatencySecs);
     }
 
     uint8_t* stream = reinterpret_cast<uint8_t*>(&proc_buf[0]);
@@ -390,6 +399,21 @@ static ASIOError create_asio_buffers(long bufferSize, long outputChannels, long 
         delete[] s_adata.bufferInfos;
         s_adata.bufferInfos = nullptr;
         return result;
+    }
+
+    //! NOTE The latencies are valid after the buffers are created, in samples.
+    //! The output latency is the time between the bufferSwitch and the sound, it includes the buffer
+    OutputLatency::reset();
+    s_adata.outputLatencySecs = -1.0;
+    {
+        long inputLatency = 0;
+        long outputLatency = 0;
+        ASIOSampleRate sampleRate = 0.0;
+        if (ASIOGetLatencies(&inputLatency, &outputLatency) == ASE_OK
+            && ASIOGetSampleRate(&sampleRate) == ASE_OK
+            && outputLatency >= 0 && sampleRate > 0.0) {
+            s_adata.outputLatencySecs = static_cast<double>(outputLatency) / sampleRate;
+        }
     }
 
     // Get channels info

@@ -114,7 +114,7 @@ async::Channel<OutputSpec> EngineController::outputSpecChanged() const
     return audioEngine()->outputSpecChanged();
 }
 
-void EngineController::process(float* stream, unsigned samplesPerChannel)
+void EngineController::process(float* stream, unsigned samplesPerChannel, int64_t blockPresentationTimeNs)
 {
-    audioEngine()->process(stream, samplesPerChannel);
+    audioEngine()->process(stream, samplesPerChannel, blockPresentationTimeNs);
 }

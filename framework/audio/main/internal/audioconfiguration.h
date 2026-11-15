@@ -51,6 +51,10 @@ public:
     void setAudioOutputDeviceId(const std::string& deviceId) override;
     async::Notification audioOutputDeviceIdChanged() const override;
 
+    msecs_t outputLatencyCompensation(const AudioDeviceID& deviceId) const override;
+    void setOutputLatencyCompensation(const AudioDeviceID& deviceId, msecs_t compensation) override;
+    async::Notification outputLatencyCompensationChanged() const override;
+
     audioch_t audioChannelsCount() const override;
 
     unsigned int driverBufferSize() const override;
@@ -82,6 +86,8 @@ public:
 private:
     void onEngineConfigChanged();
 
+    std::string outputLatencyCompensationKey(const AudioDeviceID& deviceId) const;
+
     async::Channel<io::paths_t> m_soundFontDirsChanged;
     async::Channel<samples_t> m_samplesToPreallocateChanged;
     async::Channel<bool> m_autoProcessOnlineSoundsInBackgroundChanged;
@@ -89,6 +95,7 @@ private:
 
     async::Notification m_currentAudioDriverChanged;
     async::Notification m_audioOutputDeviceIdChanged;
+    async::Notification m_outputLatencyCompensationChanged;
     async::Notification m_driverBufferSizeChanged;
     async::Notification m_driverSampleRateChanged;
 };

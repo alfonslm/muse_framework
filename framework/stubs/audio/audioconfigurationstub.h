@@ -38,6 +38,10 @@ public:
     void setAudioOutputDeviceId(const std::string& deviceId) override;
     async::Notification audioOutputDeviceIdChanged() const override;
 
+    msecs_t outputLatencyCompensation(const AudioDeviceID& deviceId) const override;
+    void setOutputLatencyCompensation(const AudioDeviceID& deviceId, msecs_t compensation) override;
+    async::Notification outputLatencyCompensationChanged() const override;
+
     audioch_t audioChannelsCount() const override;
 
     unsigned int driverBufferSize() const override; // samples

@@ -37,6 +37,9 @@ void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::OutputSpec& value);
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::PlaybackStatus& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::PlaybackStatus& value);
 
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::PlaybackPositionAnchor& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::PlaybackPositionAnchor& value);
+
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioResourceType& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioResourceType& value);
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioFxCategory& value);
@@ -179,6 +182,16 @@ inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::PlaybackStatu
     int8_t val = 0;
     p.process(val);
     value = static_cast<muse::audio::PlaybackStatus>(val);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::PlaybackPositionAnchor& value)
+{
+    p.process(value.position, value.duration, value.presentationTimeNs, value.epoch);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::PlaybackPositionAnchor& value)
+{
+    p.process(value.position, value.duration, value.presentationTimeNs, value.epoch);
 }
 
 inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioResourceType& value)

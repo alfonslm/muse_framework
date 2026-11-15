@@ -75,6 +75,7 @@ private:
     IAudioDriver::Spec m_activeSpec;
     async::Channel<Spec> m_activeSpecChanged;
     uint32_t m_bufferFrames = 0;
+    double m_streamLatencySecs = 0.0;
     samples_t m_defaultPeriod = 0;
     samples_t m_minimumPeriod = 0;
     std::vector<uint8_t> m_surroundAudioBuffer; //! NOTE: See #17648

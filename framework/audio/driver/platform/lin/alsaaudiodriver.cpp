@@ -30,6 +30,8 @@
 #include <math.h>
 #include <pthread.h>
 
+#include "audio/common/outputlatency.h"
+
 #include "translation.h"
 #include "log.h"
 #include "runtime.h"
@@ -44,6 +46,7 @@ struct ALSAData
     snd_pcm_t* alsaDeviceHandle = nullptr;
     unsigned long samples = 0;
     int channels = 0;
+    unsigned int sampleRate = 0;
     bool audioProcessingDone = false;
     pthread_t threadHandle = 0;
     IAudioDriver::Callback callback;
@@ -67,6 +70,15 @@ static void* alsaThread(void* aParam)
     {
         uint8_t* stream = (uint8_t*)data->buffer;
         int len = data->samples * data->channels * sizeof(float);
+
+        //! NOTE The frames that are queued in the device (and beyond, if the device knows)
+        //! are played before the block we are about to render
+        snd_pcm_sframes_t delayFrames = 0;
+        if (data->sampleRate > 0
+            && snd_pcm_delay(data->alsaDeviceHandle, &delayFrames) == 0
+            && delayFrames >= 0) {
+            OutputLatency::report(static_cast<double>(delayFrames) / data->sampleRate);
+        }
 
         data->callback(stream, len);
 
@@ -141,6 +153,8 @@ bool AlsaAudioDriver::open(const Spec& spec, Spec* activeSpec)
         return false;
     }
 
+    OutputLatency::reset();
+
     s_alsaData = new ALSAData();
     s_alsaData->samples = spec.output.samplesPerChannel;
     s_alsaData->channels = spec.output.audioChannelCount;
@@ -185,6 +199,7 @@ bool AlsaAudioDriver::open(const Spec& spec, Spec* activeSpec)
 
     snd_pcm_hw_params_get_rate(params, &val, &dir);
     aSamplerate = val;
+    s_alsaData->sampleRate = aSamplerate;
 
     s_alsaData->buffer = new float[s_alsaData->samples * s_alsaData->channels];
     //_alsaData->sampleBuffer = new short[_alsaData->samples * _alsaData->channels];

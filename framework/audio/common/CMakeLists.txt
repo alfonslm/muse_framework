@@ -44,6 +44,10 @@ target_sources(muse_audio_common PRIVATE
     workmode.cpp
     workmode.h
     alignmentbuffer.h
+    audioclock.h
+    outputlatency.h
+    playbackpositionanchor.h
+    playbackpositionestimator.h
 
     # Rpc
     rpc/irpcchannel.h

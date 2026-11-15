@@ -54,6 +54,12 @@ public:
 
     virtual secs_t playbackPosition() const = 0;
     virtual async::Channel<secs_t> playbackPositionChanged() const = 0;
+
+    //! NOTE playbackPosition is how far the engine has rendered, not what is heard:
+    //! the sound comes out later (output buffers, device latency).
+    //! The anchors link positions to the time they are heard,
+    //! use them with PlaybackPositionEstimator to follow the sound (e.g. for a playback cursor)
+    virtual async::Channel<PlaybackPositionAnchor> playbackPositionAnchorChanged() const = 0;
 };
 
 using IPlayerPtr = std::shared_ptr<IPlayer>;
