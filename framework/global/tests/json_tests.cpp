@@ -117,3 +117,116 @@ TEST_F(Global_Ser_Json, WriteRead)
         EXPECT_EQ(keys.at(1), "key2");
     }
 }
+
+static std::string toText(const JsonArray& arr, JsonDocument::Format format = JsonDocument::Format::Compact)
+{
+    ByteArray data = JsonDocument(arr).toJson(format);
+    return std::string(data.constChar(), data.size());
+}
+
+TEST_F(Global_Ser_Json, Write_WholeNumbers_BeyondInt)
+{
+    // [GIVEN] Whole numbers that don't fit into 32 bits
+    JsonArray arr;
+    arr.append(0);
+    arr.append(-7);
+    arr.append(2147483648.0); // 2^31
+    arr.append(5000000000.0);
+    arr.append(-5000000000.0);
+    arr.append(9007199254740991.0); // 2^53 - 1
+
+    // [THEN] They are written in full, without a fraction or an exponent
+    EXPECT_EQ(toText(arr), "[0,-7,2147483648,5000000000,-5000000000,9007199254740991]");
+}
+
+TEST_F(Global_Ser_Json, Write_Fractions_ShortestText)
+{
+    JsonArray arr;
+    arr.append(0.5);
+    arr.append(-0.25);
+    arr.append(0.1);
+    arr.append(3.1416);
+    arr.append(61.125);
+    arr.append(1.0 / 3.0);
+
+    EXPECT_EQ(toText(arr), "[0.5,-0.25,0.1,3.1416,61.125,0.3333333333333333]");
+}
+
+TEST_F(Global_Ser_Json, WriteRead_Numbers_RoundTripExactly)
+{
+    // [GIVEN] Numbers that need more than 6 decimals, or are very large or very small
+    const std::vector<double> numbers = {
+        1.0 / 3.0,
+        0.1 + 0.2,
+        static_cast<double>(0.1f),
+        -3.200000047683716,
+        123456.789012345,
+        0.0000001,
+        0.000000123456789,
+        1e20,
+        -1.5e300,
+        2.2250738585072014e-308,
+        9007199254740993.0,
+        5000000000.0,
+        48000.0 * 3600.0 * 24.0 * 365.0,
+    };
+
+    JsonArray arr;
+    for (double n : numbers) {
+        arr.append(n);
+    }
+
+    for (JsonDocument::Format format : { JsonDocument::Format::Compact, JsonDocument::Format::Indented }) {
+        // [WHEN] Written and read back
+        ByteArray data = JsonDocument(arr).toJson(format);
+        std::string err;
+        JsonDocument doc = JsonDocument::fromJson(data, &err);
+
+        // [THEN] Every number is the same, bit for bit
+        ASSERT_TRUE(err.empty()) << err;
+        ASSERT_TRUE(doc.isArray());
+        JsonArray back = doc.rootArray();
+        ASSERT_EQ(back.size(), numbers.size());
+        for (size_t i = 0; i < numbers.size(); ++i) {
+            EXPECT_TRUE(back.at(i).isNumber());
+            EXPECT_EQ(back.at(i).toDouble(), numbers.at(i)) << "number " << i << " in " << data.constChar();
+        }
+
+        // [THEN] Writing what was read gives the same text
+        ByteArray again = JsonDocument(back).toJson(format);
+        EXPECT_EQ(std::string(again.constChar(), again.size()), std::string(data.constChar(), data.size()));
+    }
+}
+
+TEST_F(Global_Ser_Json, Write_Layout)
+{
+    // [GIVEN]
+    JsonObject inner;
+    inner["k"] = 1.5;
+    inner["s"] = "a \"quoted\" word";
+
+    JsonArray arr;
+    arr.append(1);
+    arr.append(true);
+    arr.append(JsonValue());
+    arr.append(inner);
+    arr.append(JsonArray());
+    arr.append(JsonObject());
+
+    // [THEN] Compact
+    EXPECT_EQ(toText(arr), "[1,true,null,{\"k\":1.5,\"s\":\"a \\\"quoted\\\" word\"},[],{}]");
+
+    // [THEN] Indented
+    EXPECT_EQ(toText(arr, JsonDocument::Format::Indented),
+              "[\n"
+              "  1,\n"
+              "  true,\n"
+              "  null,\n"
+              "  {\n"
+              "    \"k\": 1.5,\n"
+              "    \"s\": \"a \\\"quoted\\\" word\"\n"
+              "  },\n"
+              "  [],\n"
+              "  {}\n"
+              "]\n");
+}
