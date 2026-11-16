@@ -1,6 +1,5 @@
 /*
  * SPDX-License-Identifier: GPL-3.0-only
- * MuseScore-CLA-applies
  *
  * MuseScore Studio
  * Music Composition & Notation
@@ -120,4 +119,17 @@ TEST(Audio_WavDecoderTests, DataChunkLongerThanTheFile)
     ASSERT_TRUE(audio.ret);
     EXPECT_EQ(audio.val.frames(), 2u);
     EXPECT_NEAR(audio.val.samples[1], 0.2, 1.0 / 32768);
+}
+
+TEST(Audio_WavDecoderTests, RefusesAudioLongerThanTheLimit)
+{
+    const std::vector<double> samples(200, 0.25); // 100 frames, 2 channels
+    const std::vector<uint8_t> wav = makeWav(44100, 2, 16, false, samples);
+
+    RetVal<PcmAudio> atLimit = WavDecoder::decode(wav.data(), wav.size(), 200);
+    ASSERT_TRUE(atLimit.ret);
+    EXPECT_EQ(atLimit.val.frames(), 100u);
+
+    RetVal<PcmAudio> overLimit = WavDecoder::decode(wav.data(), wav.size(), 199);
+    EXPECT_FALSE(overLimit.ret);
 }

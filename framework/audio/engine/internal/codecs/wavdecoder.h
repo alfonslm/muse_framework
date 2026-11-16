@@ -1,6 +1,5 @@
 /*
  * SPDX-License-Identifier: GPL-3.0-only
- * MuseScore-CLA-applies
  *
  * MuseScore Studio
  * Music Composition & Notation
@@ -51,12 +50,17 @@ struct PcmAudio {
 //! RIFF/WAVE: PCM 8/16/24/32 bit integer and 32/64 bit float,
 //! plain or WAVE_FORMAT_EXTENSIBLE.
 //! Works on bytes that are already in memory, never touches the file system.
+//! Audio longer than maxSamples decoded samples (all channels together) is refused.
 class WavDecoder
 {
 public:
     static constexpr audioch_t MAX_CHANNELS = 8;
     static constexpr sample_rate_t MAX_SAMPLE_RATE = 384000;
 
-    static RetVal<PcmAudio> decode(const uint8_t* data, size_t size);
+    //! The input can come from untrusted project files: without a limit a huge
+    //! file would make the engine allocate many times its size
+    static constexpr size_t MAX_SAMPLES = size_t(1) << 30; // decoded floats (4 GiB), all channels together
+
+    static RetVal<PcmAudio> decode(const uint8_t* data, size_t size, size_t maxSamples = MAX_SAMPLES);
 };
 }

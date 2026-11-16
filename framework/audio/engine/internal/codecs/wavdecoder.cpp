@@ -1,6 +1,5 @@
 /*
  * SPDX-License-Identifier: GPL-3.0-only
- * MuseScore-CLA-applies
  *
  * MuseScore Studio
  * Music Composition & Notation
@@ -96,7 +95,7 @@ inline float decodeWavSample(const uint8_t* p, const WavFormat& f)
 }
 }
 
-RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size)
+RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size, size_t maxSamples)
 {
     if (!data || size < 12 || !isWavTag(data, "RIFF") || !isWavTag(data + 8, "WAVE")) {
         return wavError("not a RIFF/WAVE file");
@@ -168,6 +167,9 @@ RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size)
     }
 
     const size_t frames = samplesSize / format.blockAlign;
+    if (frames > maxSamples / format.channels) {
+        return wavError("audio file is too long to load");
+    }
 
     PcmAudio audio;
     audio.sampleRate = format.sampleRate;
