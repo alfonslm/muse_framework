@@ -96,6 +96,10 @@ inline float fadeGain(AudioFadeCurve curve, double x)
 //! Clip gain is limited to this, so a crafted project cannot make a track blow up the mix
 constexpr float MAX_GAIN_DB = 48.f;
 
+//! Clip times beyond this are refused: they come from project files, and every time becomes a frame
+//! index (a 64-bit integer) at up to 384 kHz. About 115 days.
+constexpr double MAX_CLIP_SECS = 1e7;
+
 //! A clip whose length is within this of the rest of its source plays to the source's end
 //! (the app stores seconds with 6 decimals)
 constexpr double RINGS_OUT_EPSILON_SECS = 2e-6;
@@ -196,7 +200,8 @@ std::unique_ptr<ClipAudioNode::ClipSet> ClipAudioNode::buildClipSet(const AudioC
         const double offset = clip.sourceOffsetSecs.raw();
         const double length = clip.lengthSecs.raw();
         if (!isFiniteSecs(start) || !isFiniteSecs(offset) || !isFiniteSecs(length) || !std::isfinite(clip.gainDb)
-            || start < 0.0 || offset < 0.0 || length <= 0.0) {
+            || start < 0.0 || offset < 0.0 || length <= 0.0
+            || start > MAX_CLIP_SECS || offset > MAX_CLIP_SECS || length > MAX_CLIP_SECS) {
             LOGE() << "audio clip with invalid times dropped";
             continue;
         }
@@ -281,7 +286,7 @@ void ClipAudioNode::setClips(const AudioClipList& clips)
 
     //! NOTE Kept until the processing thread has moved past it (freeRetiredSets)
     m_sets.push_back(std::move(set));
-    m_current.store(published, std::memory_order_release);
+    m_current.store(published);
 
     freeRetiredSets();
 }
@@ -290,10 +295,21 @@ void ClipAudioNode::freeRetiredSets()
 {
     ONLY_AUDIO_ENGINE_THREAD;
 
-    //! NOTE The processing thread stores the seq of each set it reads, and only ever reads the newest
-    //! set, so it can never again read a set older than the seq it stored last. The newest set is
-    //! never freed here.
-    const uint64_t inUse = m_inUseSeq.load(std::memory_order_acquire);
+    //! NOTE The newest set is never freed here. All atomics are seq_cst, so their operations have one
+    //! total order S, and m_current was stored before this point.
+    //! - Not processing: the last block (if any) ended before this load in S, so its reads happened
+    //!   before; a block that starts later loads m_current after our store, so it reads the newest set.
+    //!   Everything but the newest can go.
+    //! - Processing: the processing thread stores the seq of each set it reads and only ever reads the
+    //!   newest set, so it never again reads a set older than the seq it stored last.
+    if (!m_processing.load()) {
+        while (m_sets.size() > 1) {
+            m_sets.pop_front();
+        }
+        return;
+    }
+
+    const uint64_t inUse = m_inUseSeq.load();
     while (m_sets.size() > 1 && m_sets.front()->seq < inUse) {
         m_sets.pop_front();
     }
@@ -394,7 +410,11 @@ void ClipAudioNode::renderClip(const PlayableClip& clip, samples_t blockStart, f
         const double cutoff = std::min(1.0, static_cast<double>(outRate) / sourceRate);
         const double tailSecs = (SINC_HALF_WIDTH / cutoff + 1.0) / sourceRate;
         const double tailEnd = std::min(clip.end + tailSecs, clip.tailLimit);
-        endFrame = std::max(endFrame, static_cast<samples_t>(std::ceil(tailEnd * outRate)));
+        samples_t tailEndFrame = static_cast<samples_t>(std::ceil(tailEnd * outRate));
+        if (std::isfinite(clip.tailLimit)) {
+            tailEndFrame = std::min(tailEndFrame, static_cast<samples_t>(std::llround(clip.tailLimit * outRate)));
+        }
+        endFrame = std::max(endFrame, tailEndFrame);
     }
     const samples_t from = std::max(blockStart, startFrame);
     const samples_t to = std::min(blockStart + frames, endFrame);
@@ -418,7 +438,7 @@ void ClipAudioNode::renderClip(const PlayableClip& clip, samples_t blockStart, f
             }
             float* out = buffer + (f - blockStart) * outChannels;
             for (audioch_t ch = 0; ch < outChannels; ++ch) {
-                out[ch] += g * sourceSample(audio, src, ch, outChannels);
+                out[ch] = g * sourceSample(audio, src, ch, outChannels); // clips never share a frame
             }
         }
         return;
@@ -428,10 +448,15 @@ void ClipAudioNode::renderClip(const PlayableClip& clip, samples_t blockStart, f
         return;
     }
 
+    const double step = static_cast<double>(sourceRate) / outRate;
+    const double sourceOffsetFrames = clip.sourceOffset * sourceRate;
+
     std::array<float, MAX_OUT_CHANNELS> frame {};
     for (samples_t f = from; f < to; ++f) {
         const double t = static_cast<double>(f) / outRate;
-        const double sourcePos = (t - clip.start + clip.sourceOffset) * sourceRate;
+        //! NOTE Counted from the clip's first frame, so a clip at zero with no offset takes exactly the
+        //! positions a whole file always took (frame * step)
+        const double sourcePos = static_cast<double>(f - startFrame) * step + sourceOffsetFrames;
 
         std::fill(frame.begin(), frame.begin() + outChannels, 0.f);
         renderResampledFrame(audio, sourceFrames, outRate, sourcePos, frame.data(), outChannels);
@@ -442,7 +467,7 @@ void ClipAudioNode::renderClip(const PlayableClip& clip, samples_t blockStart, f
         }
         float* out = buffer + (f - blockStart) * outChannels;
         for (audioch_t ch = 0; ch < outChannels; ++ch) {
-            out[ch] += g * frame[ch];
+            out[ch] = g * frame[ch]; // clips never share a frame
         }
     }
 }
@@ -456,15 +481,23 @@ void ClipAudioNode::doSelfProcess(float* buffer, samples_t samplesPerChannel)
 
     std::fill(buffer, buffer + samplesPerChannel * outChannels, 0.f);
 
-    //! NOTE Pick up the newest list and say so, every block (also while stopped, so old lists can be freed)
-    const ClipSet* set = m_current.load(std::memory_order_acquire);
+    //! NOTE Pick up the newest list and say so (see freeRetiredSets for why this order)
+    m_processing.store(true);
+    const ClipSet* set = m_current.load();
     if (set) {
-        m_inUseSeq.store(set->seq, std::memory_order_release);
+        m_inUseSeq.store(set->seq);
     }
 
-    if (!isModePlaying(m_mode) || !set || outSampleRate == 0) {
-        return;
+    if (isModePlaying(m_mode) && set && outSampleRate != 0) {
+        render(set, buffer, samplesPerChannel);
     }
+
+    m_processing.store(false);
+}
+
+void ClipAudioNode::render(const ClipSet* set, float* buffer, samples_t samplesPerChannel)
+{
+    const sample_rate_t outSampleRate = m_outputSpec.sampleRate;
 
     samples_t position = m_position.load();
     const samples_t blockEnd = position + samplesPerChannel;

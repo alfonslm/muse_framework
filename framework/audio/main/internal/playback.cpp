@@ -397,16 +397,19 @@ async::Promise<TrackId, TrackParams> Playback::addTrack(const TrackName& trackNa
         ByteArray msgData = RpcPacker::pack(trackName, data.sources, data.clips, params, clipsStreamId);
 
         Msg msg = rpc::make_request(ctxId(), MsgCode::AddTrackWithAudioClips, msgData);
-        channel()->send(msg, [resolve, reject](const Msg& res) {
+        channel()->send(msg, [this, resolve, reject, clipsStreamId](const Msg& res) {
             ONLY_AUDIO_MAIN_THREAD;
             RetVal2<TrackId, TrackParams> ret;
             IF_ASSERT_FAILED(RpcPacker::unpack(res.data, ret)) {
+                channel()->removeStream(clipsStreamId);
                 doReject(MsgCode::AddTrackWithAudioClips, reject, audio::make_ret(Err::InvalidRpcData));
                 return;
             }
             if (ret.ret) {
                 (void)resolve(ret.val1, ret.val2);
             } else {
+                //! NOTE No track, so nothing listens on the engine side
+                channel()->removeStream(clipsStreamId);
                 doReject(MsgCode::AddTrackWithAudioClips, reject, ret.ret);
             }
         });

@@ -712,3 +712,69 @@ TEST(Audio_ClipAudioNodeTests, WholeFileRingsOutWhenResampledUnlessAClipFollows)
         ASSERT_FLOAT_EQ(out[f], 0.f) << "frame " << f;
     }
 }
+
+TEST(Audio_ClipAudioNodeTests, ResampledWholeFileTakesTheSamePositionsAsBefore)
+{
+    // What a whole-file track rendered before clip lists: output frame f reads the source at f * step.
+    // A one-clip list at zero must give exactly those samples, so old projects export the same.
+    auto sine = makeSine(44100, 997.0, 44100);
+    const sample_rate_t outRate = 48000;
+    const double step = 44100.0 / outRate;
+    const samples_t frames = 48000 + 100; // past the end, into the tail
+
+    std::vector<float> expected(frames, 0.f);
+    for (samples_t f = 0; f < frames; ++f) {
+        renderResampledFrame(*sine, sine->frames(), outRate, static_cast<double>(f) * step, &expected[f], 1);
+    }
+
+    ClipAudioNodePtr node = makeNode(sine, outRate, 1);
+    node->setMode(ProcessMode::Playing);
+    const std::vector<float> out = render(node, frames, 512);
+
+    for (samples_t f = 0; f < frames; ++f) {
+        ASSERT_EQ(out[f], expected[f]) << "frame " << f;
+    }
+}
+
+TEST(Audio_ClipAudioNodeTests, OldListsAreFreedWhenTheTrackIsNotProcessed)
+{
+    // A muted track's source is not processed at all: lists sent meanwhile must not pile up
+    ClipAudioNodePtr node = makeNode(makeRamp(48000, 1, 4800), 48000, 1);
+    for (int i = 0; i < 100; ++i) {
+        AudioClip clip;
+        clip.sourceKey = "a";
+        clip.startSecs = 0.001 * i;
+        clip.lengthSecs = 0.05;
+        node->setClips({ clip });
+    }
+    EXPECT_EQ(node->keptClipSets(), 1u);
+
+    // And the list that was kept is the newest one
+    node->setMode(ProcessMode::Playing);
+    const samples_t start = static_cast<samples_t>(std::llround(0.099 * 48000));
+    const std::vector<float> out = render(node, start + 10, 512);
+    EXPECT_FLOAT_EQ(out[start - 1], 0.f);
+    EXPECT_FLOAT_EQ(out[start], 1.f);
+}
+
+TEST(Audio_ClipAudioNodeTests, HugeTimesAreRefused)
+{
+    auto audio = makeRamp(48000, 1, 4800);
+    for (double huge : { 1e300, 1e8 }) {
+        AudioClip clip;
+        clip.sourceKey = "a";
+        clip.lengthSecs = 0.05;
+
+        AudioClip lateStart = clip;
+        lateStart.startSecs = huge;
+        AudioClip bigOffset = clip;
+        bigOffset.sourceOffsetSecs = huge;
+        AudioClip longClip = clip;
+        longClip.lengthSecs = huge;
+
+        for (const AudioClip& c : { lateStart, bigOffset, longClip }) {
+            ClipAudioNodePtr node = std::make_shared<ClipAudioNode>(ClipAudioNode::Sources { { "a", audio } }, AudioClipList { c });
+            EXPECT_FALSE(node->firstNoteTime().has_value()) << huge;
+        }
+    }
+}

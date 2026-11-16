@@ -72,6 +72,9 @@ public:
     //! Builds a ClipSet from `clips` and publishes it. Engine thread only.
     void setClips(const AudioClipList& clips);
 
+    //! Lists still held for the processing thread (the current one included). Engine thread; for tests.
+    size_t keptClipSets() const { return m_sets.size(); }
+
     //! Start of the first clip that sounds; nullopt if none does (the one-pass export skips such tracks)
     std::optional<secs_t> firstNoteTime() const override;
 
@@ -126,6 +129,7 @@ private:
 
     void onOutputSpecChanged(const OutputSpec& spec) override;
     void doSelfProcess(float* buffer, samples_t samplesPerChannel) override;
+    void render(const ClipSet* set, float* buffer, samples_t samplesPerChannel);
 
     //! Adds the clip's part of the block [blockStart, blockStart + frames) (output frames) to `buffer`
     void renderClip(const PlayableClip& clip, samples_t blockStart, float* buffer, samples_t frames) const;
@@ -139,10 +143,14 @@ private:
     std::deque<std::unique_ptr<const ClipSet> > m_sets;
     uint64_t m_lastSeq = 0;
 
-    //! The newest set; written by the engine thread (release), read by the processing thread (acquire)
+    //! The newest set; written by the engine thread, read by the processing thread.
+    //! These three are sequentially consistent: freeRetiredSets() relies on their single total order.
     std::atomic<const ClipSet*> m_current = nullptr;
     //! seq of the set the processing thread read last; it never reads an older one again
     std::atomic<uint64_t> m_inUseSeq = 0;
+    //! True while the processing thread is inside a block. A muted or skipped track is never processed,
+    //! so without this its old sets could not be freed until it plays again.
+    std::atomic<bool> m_processing = false;
 
     //! Frames of the output sample rate since time zero.
     //! Written by seek() (engine thread) and by process() (processing thread).

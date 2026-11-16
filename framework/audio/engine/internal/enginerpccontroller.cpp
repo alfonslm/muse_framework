@@ -313,12 +313,16 @@ void EngineRpcController::init()
                 return make_response(msg, RpcPacker::pack(RetType::make_ret(Err::InvalidRpcData)));
             }
 
-            //! NOTE New clip lists are applied on this thread without the operation lock:
-            //! the clip source hands them to the processing thread wait-free (ClipAudioNode::setClips)
-            channel()->addReceiveStream(StreamName::AudioClipsStream, clipsStreamId, data.clipsChanged);
-
             if (auto actx = audioContext(msg.ctxId)) {
                 RetType ret = actx->addTrack(trackName, data, params);
+
+                //! NOTE Only for a track that exists. Lists the app sent meanwhile are behind this request
+                //! in the same queue, so none is lost. They are applied on this thread without the
+                //! operation lock: the clip source hands them to the processing thread wait-free.
+                if (ret.ret) {
+                    channel()->addReceiveStream(StreamName::AudioClipsStream, clipsStreamId, data.clipsChanged);
+                }
+
                 return make_response(msg, RpcPacker::pack(ret));
             } else {
                 return make_response(msg, RpcPacker::pack(RetType::make_ret(Err::InvalidContext)));

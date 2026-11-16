@@ -359,7 +359,9 @@ inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioFadeCurv
 {
     int curve = 0;
     p.process(curve);
-    value = static_cast<muse::audio::AudioFadeCurve>(curve);
+    //! NOTE Comes from project data: an unknown curve is linear
+    value = curve == static_cast<int>(muse::audio::AudioFadeCurve::EqualPower)
+            ? muse::audio::AudioFadeCurve::EqualPower : muse::audio::AudioFadeCurve::Linear;
 }
 
 inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioFade& value)
