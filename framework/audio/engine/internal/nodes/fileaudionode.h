@@ -36,6 +36,8 @@ namespace muse::audio::engine {
 //! The audio is held in memory and never changes after construction.
 //! Sample rate conversion is done in process() by position (no state between blocks),
 //! so seek, loop and offline export are exact, and nothing is allocated when the output spec changes.
+// TODO(FontDaw B2-01a step 3): replaced by ClipAudioNode (clipaudionode.h), which plays one or more clips with
+// the same position-based sample rate conversion; remove this file and move its tests to clipaudionode_tests.cpp
 class FileAudioNode : public AudioSourceNode
 {
 public:

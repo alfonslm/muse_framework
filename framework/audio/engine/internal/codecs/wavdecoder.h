@@ -51,6 +51,7 @@ struct PcmAudio {
 //! plain or WAVE_FORMAT_EXTENSIBLE.
 //! Works on bytes that are already in memory, never touches the file system.
 //! Audio longer than maxSamples decoded samples (all channels together) is refused.
+// TODO(FontDaw B2-01a step 2): WavAudioDecoder, the IAudioDecoder (audiodecoder.h) for WAV, sharing this parser
 class WavDecoder
 {
 public:

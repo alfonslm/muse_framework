@@ -67,6 +67,7 @@ public:
 
     // Tracks
     RetVal2<TrackId, TrackParams> addTrack(const std::string& trackName, io::IODevice* playbackData, const TrackParams& params) override;
+    // TODO(FontDaw B2-01a step 4): the AudioClipTrackData overload (see IAudioContext)
     RetVal2<TrackId, TrackParams> addTrack(const std::string& trackName, const mpe::PlaybackData& playbackData,
                                            const TrackParams& params) override;
     RetVal2<TrackId, TrackParams> addAuxTrack(const std::string& trackName, const TrackParams& params) override;

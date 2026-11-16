@@ -63,6 +63,8 @@ void pack_custom(muse::msgpack::Packer& p, const muse::audio::ControlParams& val
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::ControlParams& value);
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::TrackParams& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::TrackParams& value);
+// TODO(FontDaw B2-01a step 1): pack_custom/unpack_custom for AudioFadeCurve, AudioFade, AudioClipSource and
+// AudioClip (audio/common/audiocliptypes.h); AudioClipTrackData itself is packed as (sources, clips) plus a stream id
 
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::SoundPreset& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::SoundPreset& value);

@@ -45,6 +45,8 @@ public:
 
     // Tracks
     virtual RetVal2<TrackId, TrackParams> addTrack(const TrackName& trackName, io::IODevice* playbackData, const TrackParams& params) = 0;
+    // TODO(FontDaw B2-01a step 4): addTrack(trackName, const AudioClipTrackData& data, params): decodes every
+    // source (codec::makeDecoder + decodeAll), makes a ClipAudioNode, listens to data.clipsChanged
     virtual RetVal2<TrackId, TrackParams> addTrack(const TrackName& trackName, const mpe::PlaybackData& playbackData,
                                                    const TrackParams& params) = 0;
     virtual RetVal2<TrackId, TrackParams> addAuxTrack(const TrackName& trackName, const TrackParams& params) = 0;

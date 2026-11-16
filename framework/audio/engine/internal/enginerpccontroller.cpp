@@ -300,6 +300,10 @@ void EngineRpcController::init()
             }
         });
 
+        // TODO(FontDaw B2-01a step 4): onLongRequest(ctxId, MsgCode::AddTrackWithAudioClips, ...): unpack
+        // (trackName, sources, clips, params, clipsStreamId), add a receive stream for clipsChanged that runs on this
+        // thread without an operation lock (ClipAudioNode's list swap is wait-free), call the context, answer.
+
         onLongRequest(ctxId, MsgCode::AddAuxTrack, [this](const Msg& msg) {
             ONLY_AUDIO_RPC_THREAD;
 

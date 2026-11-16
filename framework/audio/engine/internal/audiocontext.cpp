@@ -155,6 +155,9 @@ TrackId AudioContext::newTrackId() const
     return lastId;
 }
 
+// TODO(FontDaw B2-01a step 4): implement this overload as a one-clip list (the whole file from time zero,
+// through codec::makeDecoder and ClipAudioNode), so its callers and its output stay as they are
+
 RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackName,
                                                      io::IODevice* playbackData,
                                                      const TrackParams& params)
@@ -222,6 +225,9 @@ RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackNam
 
     return RetType::make_ok(trackId, track.params);
 }
+
+// TODO(FontDaw B2-01a step 4): AudioContext::addTrack(trackName, const AudioClipTrackData&, params), the same
+// chain as above with a ClipAudioNode
 
 RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackName,
                                                      const mpe::PlaybackData& playbackData,

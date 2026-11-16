@@ -78,6 +78,7 @@ enum class MsgCode {
     GetTrackName,
     AddTrackWithPlaybackData,
     AddTrackWithIODevice,
+    // TODO(FontDaw B2-01a step 1): AddTrackWithAudioClips (AudioClipTrackData; IPlayback::addTrack), also in to_string below
     AddAuxTrack,
     // notification
     TrackAdded,
@@ -148,6 +149,7 @@ enum class MsgCode {
     PlaybackPositionStream,
     PlaybackPositionAnchorStream,
     InputProcessingProgressStream,
+    // TODO(FontDaw B2-01a step 1): AudioClipsStream (new clip lists for a clip track, AudioClipTrackData::clipsChanged)
     SaveSoundTrackProgressStream
 };
 

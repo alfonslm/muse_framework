@@ -91,6 +91,8 @@ else()
         internal/nodes/eventaudionode.h
         internal/nodes/fileaudionode.cpp
         internal/nodes/fileaudionode.h
+        # TODO(FontDaw B2-01a step 3): internal/nodes/clipaudionode.cpp replaces fileaudionode.*
+        internal/nodes/clipaudionode.h
         internal/nodes/fxnode.cpp
         internal/nodes/fxnode.h
         internal/nodes/fxchain.cpp
@@ -164,6 +166,8 @@ else()
         internal/codecs/vorbisdecoder.h
         internal/codecs/wavdecoder.cpp
         internal/codecs/wavdecoder.h
+        # TODO(FontDaw B2-01a step 2): internal/codecs/audiodecoder.cpp
+        internal/codecs/audiodecoder.h
     )
 
     # vorbisdecoder.cpp includes stb_vorbis.c, which defines short macros (L, C, R)
