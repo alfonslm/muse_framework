@@ -35,6 +35,8 @@
 #include "audio/common/audiotypes.h"
 #pragma pack(pop)
 
+#include "audio/common/audiocliptypes.h"
+
 #include "audio/common/rpc/rpcpacker.h"
 #include "audio/common/rpc/irpcchannel.h"
 
@@ -935,6 +937,56 @@ TEST_F(Audio_RpcPackerTests, Duration)
     ByteArray data = rpc::RpcPacker::pack(origin);
 
     mpe::duration_t unpacked = 0;
+    bool ok = rpc::RpcPacker::unpack(data, unpacked);
+
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(origin == unpacked);
+}
+
+TEST_F(Audio_RpcPackerTests, AudioClipSources)
+{
+    std::vector<AudioClipSource> origin(2);
+    origin[0].key = "asset-1";
+    origin[0].device = 0x123456789abcdefULL;
+    origin[1].key = "asset-2";
+    origin[1].device = 42;
+
+    ByteArray data = rpc::RpcPacker::pack(origin);
+
+    std::vector<AudioClipSource> unpacked;
+    bool ok = rpc::RpcPacker::unpack(data, unpacked);
+
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(origin == unpacked);
+}
+
+TEST_F(Audio_RpcPackerTests, AudioClipList)
+{
+    AudioClipList origin(2);
+
+    origin[0].sourceKey = "asset-1";
+    origin[0].startSecs = 1.5;
+    origin[0].sourceOffsetSecs = 0.25;
+    origin[0].lengthSecs = 7.75;
+    origin[0].gainDb = -6.5f;
+    origin[0].fadeIn = { 0.5, AudioFadeCurve::EqualPower };
+    origin[0].fadeOut = { 0.125, AudioFadeCurve::Linear };
+    origin[0].muted = true;
+    origin[0].stretchRatio = 1.5;
+
+    origin[1].sourceKey = "asset-2";
+    origin[1].startSecs = 20.0;
+    origin[1].sourceOffsetSecs = 3.0;
+    origin[1].lengthSecs = 2.5;
+    origin[1].gainDb = 3.25f;
+    origin[1].fadeIn = { 0.75, AudioFadeCurve::Linear };
+    origin[1].fadeOut = { 1.0, AudioFadeCurve::EqualPower };
+    origin[1].muted = false;
+    origin[1].stretchRatio = 0.5;
+
+    ByteArray data = rpc::RpcPacker::pack(origin);
+
+    AudioClipList unpacked;
     bool ok = rpc::RpcPacker::unpack(data, unpacked);
 
     EXPECT_TRUE(ok);

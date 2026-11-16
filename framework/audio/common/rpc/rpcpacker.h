@@ -25,6 +25,7 @@
 
 #include "global/serialization/msgpack_forward.h"
 #include "audio/common/audiotypes.h"
+#include "audio/common/audiocliptypes.h"
 
 #include "log.h"
 
@@ -63,8 +64,14 @@ void pack_custom(muse::msgpack::Packer& p, const muse::audio::ControlParams& val
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::ControlParams& value);
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::TrackParams& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::TrackParams& value);
-// TODO(FontDaw B2-01a step 1): pack_custom/unpack_custom for AudioFadeCurve, AudioFade, AudioClipSource and
-// AudioClip (audio/common/audiocliptypes.h); AudioClipTrackData itself is packed as (sources, clips) plus a stream id
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioFadeCurve& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioFadeCurve& value);
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioFade& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioFade& value);
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioClipSource& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioClipSource& value);
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioClip& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioClip& value);
 
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::SoundPreset& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::SoundPreset& value);
@@ -341,6 +348,50 @@ inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioSampleFo
     int format = 0;
     p.process(format);
     value = static_cast<muse::audio::AudioSampleFormat>(format);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioFadeCurve& value)
+{
+    p.process(static_cast<int>(value));
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioFadeCurve& value)
+{
+    int curve = 0;
+    p.process(curve);
+    value = static_cast<muse::audio::AudioFadeCurve>(curve);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioFade& value)
+{
+    p.process(value.length, value.curve);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioFade& value)
+{
+    p.process(value.length, value.curve);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioClipSource& value)
+{
+    p.process(value.key, value.device);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioClipSource& value)
+{
+    p.process(value.key, value.device);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioClip& value)
+{
+    p.process(value.sourceKey, value.startSecs, value.sourceOffsetSecs, value.lengthSecs, value.gainDb,
+              value.fadeIn, value.fadeOut, value.muted, value.stretchRatio);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioClip& value)
+{
+    p.process(value.sourceKey, value.startSecs, value.sourceOffsetSecs, value.lengthSecs, value.gainDb,
+              value.fadeIn, value.fadeOut, value.muted, value.stretchRatio);
 }
 
 inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::SoundTrackFormat& value)

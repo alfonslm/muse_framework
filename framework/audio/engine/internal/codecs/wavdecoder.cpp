@@ -55,15 +55,13 @@ RetVal<PcmAudio> wavError(const std::string& text)
     return RetVal<PcmAudio>::make_ret(make_ret(Err::InvalidAudioSource, text));
 }
 
-struct WavFormat {
-    uint16_t tag = 0;
-    uint16_t channels = 0;
-    uint32_t sampleRate = 0;
-    uint16_t blockAlign = 0;
-    uint16_t bitsPerSample = 0;
-};
+RetVal<WavLayout> wavLayoutError(const std::string& text)
+{
+    return RetVal<WavLayout>::make_ret(make_ret(Err::InvalidAudioSource, text));
+}
+}
 
-inline float decodeWavSample(const uint8_t* p, const WavFormat& f)
+float codec::decodeWavSample(const uint8_t* p, const WavLayout& f)
 {
     if (f.tag == WAV_FORMAT_IEEE_FLOAT) {
         if (f.bitsPerSample == 32) {
@@ -93,15 +91,14 @@ inline float decodeWavSample(const uint8_t* p, const WavFormat& f)
     }
     return 0.f;
 }
-}
 
-RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size, size_t maxSamples)
+RetVal<WavLayout> codec::parseWav(const uint8_t* data, size_t size)
 {
     if (!data || size < 12 || !isWavTag(data, "RIFF") || !isWavTag(data + 8, "WAVE")) {
-        return wavError("not a RIFF/WAVE file");
+        return wavLayoutError("not a RIFF/WAVE file");
     }
 
-    WavFormat format;
+    WavLayout format;
     bool hasFormat = false;
     const uint8_t* samples = nullptr;
     size_t samplesSize = 0;
@@ -115,7 +112,7 @@ RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size, size_t max
 
         if (isWavTag(chunk, "fmt ")) {
             if (chunkSize < 16 || available < 16) {
-                return wavError("damaged WAV format chunk");
+                return wavLayoutError("damaged WAV format chunk");
             }
             const uint8_t* body = data + bodyPos;
             format.tag = wavU16(body);
@@ -126,7 +123,7 @@ RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size, size_t max
             if (format.tag == WAV_FORMAT_EXTENSIBLE) {
                 // The real format is the first two bytes of the SubFormat GUID
                 if (chunkSize < 40 || available < 40) {
-                    return wavError("damaged WAV format chunk");
+                    return wavLayoutError("damaged WAV format chunk");
                 }
                 format.tag = wavU16(body + 24);
             }
@@ -148,7 +145,7 @@ RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size, size_t max
     }
 
     if (!hasFormat || !samples) {
-        return wavError("WAV file without format or data chunk");
+        return wavLayoutError("WAV file without format or data chunk");
     }
 
     const bool isInt = format.tag == WAV_FORMAT_PCM
@@ -156,27 +153,40 @@ RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size, size_t max
                            || format.bitsPerSample == 24 || format.bitsPerSample == 32);
     const bool isFloat = format.tag == WAV_FORMAT_IEEE_FLOAT && (format.bitsPerSample == 32 || format.bitsPerSample == 64);
     if (!isInt && !isFloat) {
-        return wavError("unsupported WAV sample format");
+        return wavLayoutError("unsupported WAV sample format");
     }
 
     const size_t bytesPerSample = format.bitsPerSample / 8;
-    if (format.channels == 0 || format.channels > MAX_CHANNELS
-        || format.sampleRate == 0 || format.sampleRate > MAX_SAMPLE_RATE
+    if (format.channels == 0 || format.channels > WavDecoder::MAX_CHANNELS
+        || format.sampleRate == 0 || format.sampleRate > WavDecoder::MAX_SAMPLE_RATE
         || format.blockAlign != bytesPerSample * format.channels) {
-        return wavError("unsupported WAV channel count, sample rate or block size");
+        return wavLayoutError("unsupported WAV channel count, sample rate or block size");
     }
 
-    const size_t frames = samplesSize / format.blockAlign;
-    if (frames > maxSamples / format.channels) {
+    format.samples = samples;
+    format.frames = samplesSize / format.blockAlign;
+    return RetVal<WavLayout>::make_ok(format);
+}
+
+RetVal<PcmAudio> WavDecoder::decode(const uint8_t* data, size_t size, size_t maxSamples)
+{
+    RetVal<WavLayout> parsed = parseWav(data, size);
+    if (!parsed.ret) {
+        return RetVal<PcmAudio>::make_ret(parsed.ret);
+    }
+
+    const WavLayout& format = parsed.val;
+    const size_t bytesPerSample = format.bitsPerSample / 8;
+    if (format.frames > maxSamples / format.channels) {
         return wavError("audio file is too long to load");
     }
 
     PcmAudio audio;
     audio.sampleRate = format.sampleRate;
     audio.channels = static_cast<audioch_t>(format.channels);
-    audio.samples.resize(frames * format.channels);
+    audio.samples.resize(format.frames * format.channels);
 
-    const uint8_t* p = samples;
+    const uint8_t* p = format.samples;
     float* out = audio.samples.data();
     for (size_t i = 0, n = audio.samples.size(); i < n; ++i, p += bytesPerSample) {
         out[i] = decodeWavSample(p, format);
