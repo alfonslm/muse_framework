@@ -94,6 +94,9 @@ TEST(Audio_FileAudioNodeTests, PlaysTheFileFromTimeZero)
 {
     FileAudioNodePtr node = makeNode(makeRamp(48000, 2, 1000), 48000);
     EXPECT_DOUBLE_EQ(node->duration().raw(), 1000.0 / 48000.0);
+    // The one-pass export never processes a source without a first note
+    ASSERT_TRUE(node->firstNoteTime().has_value());
+    EXPECT_DOUBLE_EQ(node->firstNoteTime()->raw(), 0.0);
 
     node->setMode(ProcessMode::Playing);
     const std::vector<float> out = render(node, 1200, 256);
@@ -224,4 +227,5 @@ TEST(Audio_FileAudioNodeTests, EmptyAudio)
     }
     EXPECT_TRUE(node->readyToPlay());
     EXPECT_FALSE(node->hasPendingChunks());
+    EXPECT_FALSE(node->firstNoteTime().has_value());
 }

@@ -43,6 +43,9 @@ public:
 
     secs_t duration() const;
 
+    //! The audio sounds from time zero; empty audio never sounds (the one-pass export skips such tracks)
+    std::optional<secs_t> firstNoteTime() const override;
+
     void seek(const TimePosition& position, const bool flushSound = true) override;
     void flush() override;
 

@@ -101,6 +101,14 @@ secs_t FileAudioNode::duration() const
     return static_cast<double>(m_frames) / m_audio->sampleRate;
 }
 
+std::optional<secs_t> FileAudioNode::firstNoteTime() const
+{
+    if (m_frames == 0) {
+        return std::nullopt;
+    }
+    return secs_t(0.0);
+}
+
 void FileAudioNode::onOutputSpecChanged(const OutputSpec& spec)
 {
     ONLY_AUDIO_ENGINE_THREAD;
