@@ -25,6 +25,9 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/alignbuffer_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/playbackpositionestimator_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/audioresourcetypes_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/wavtestutils.h
+    ${CMAKE_CURRENT_LIST_DIR}/wavdecoder_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/fileaudionode_tests.cpp
 )
 
 include(SetupGTest)

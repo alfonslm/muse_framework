@@ -60,6 +60,9 @@ public:
     virtual async::Promise<TrackIdList> trackIdList() const = 0;
     virtual async::Promise<RetVal<TrackName> > trackName(const TrackId trackId) const = 0;
 
+    //! NOTE A track that plays an audio file (WAV for now) from time zero, with the fx chain, mixer channel
+    //! and aux sends every track has. The engine reads `data` while it adds the track, on its own thread,
+    //! and does not use it afterwards: keep the device alive, and leave it alone, until the promise is resolved or rejected.
     virtual async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, io::IODevice* data, const TrackParams& params) = 0;
     virtual async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, const mpe::PlaybackData& data,
                                                           const TrackParams& params) = 0;
