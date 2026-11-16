@@ -67,6 +67,7 @@ private:
     bool event(QEvent* ev) override;
 
     void deinit();
+    void deinitPluginView();
 
     FIDString currentPlatformUiType() const;
 
