@@ -34,6 +34,8 @@
 #include "nodes/audiosourcenode.h"
 #include "nodes/signalnode.h"
 #include "nodes/automationcontrolnode.h"
+#include "nodes/fileaudionode.h"
+#include "codecs/wavdecoder.h"
 
 #include "contextplayer.h"
 
@@ -165,18 +167,60 @@ RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackNam
         return RetType::make_ret(Err::InvalidAudioFilePath);
     }
 
+    //! NOTE The device is read here, once, and is not used after this call returns:
+    //! the audio is decoded into memory (see FileAudioNode)
+    if (!playbackData->isOpen() && !playbackData->open(io::IODevice::ReadOnly)) {
+        return RetType::make_ret(Err::InvalidAudioFilePath);
+    }
+
+    if (!playbackData->seek(0)) {
+        return RetType::make_ret(Err::InvalidAudioFilePath);
+    }
+
+    RetVal<codec::PcmAudio> audio = codec::WavDecoder::decode(playbackData->readData(), playbackData->size());
+    if (!audio.ret) {
+        return RetType::make_ret(audio.ret);
+    }
+
     TrackId trackId = newTrackId();
+
+    // Make source
+    FileAudioNodePtr source = std::make_shared<FileAudioNode>(std::make_shared<const codec::PcmAudio>(std::move(audio.val)));
+    source->setOutputSpec(outputSpec());
+    source->applyInputParams(params.source);
+
+    // The same chain as an event track has: signalnode <- controlnode <- fxnode[] <- source
+    AutomationControlNodePtr controlNode = std::make_shared<AutomationControlNode>();
+    controlNode->setPlayheadPosition(std::static_pointer_cast<IPlayheadPosition>(m_player));
+
+    TrackChainPtr trackChain = std::make_shared<TrackChain>(trackId, trackName);
+    trackChain->setOutputSpec(outputSpec());
+    trackChain->setMode(mode());
+    trackChain->setSource(source);
+    trackChain->setFxChain(nullptr); // will be added later
+    trackChain->setControl(controlNode);
+    trackChain->setSignal(std::make_shared<SignalNode>());
+    trackChain->rebuild();
+
+    Ret ret = m_mixer->addTrack(trackChain, params.auxSends);
+    if (!ret) {
+        return RetType::make_ret(ret);
+    }
+
+    // Make track info
     Track track;
     track.type = TrackType::Sound_track;
     track.id = trackId;
     track.name = trackName;
     track.params = params;
-    //! NOT IMPLEMENTED YET
-    // track.chain = ...
+    track.chain = trackChain;
+
+    onFxChainParamsChanged(track, params.fxChain);
+    onControlParamsChanged(track, params.control);
 
     doAddTrack(track);
 
-    return RetType::make_ok(trackId, { });
+    return RetType::make_ok(trackId, track.params);
 }
 
 RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackName,
