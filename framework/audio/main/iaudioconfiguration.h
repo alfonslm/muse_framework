@@ -79,12 +79,6 @@ public:
     virtual void setUseSoundFontLowPassFilter(bool value) = 0;
     virtual async::Channel<bool> useSoundFontLowPassFilterChanged() const = 0;
 
-    // plugins
-    //! NOTE Keep plugin instruments active and processed while playback is stopped (see AudioEngineConfig)
-    virtual bool keepPluginInstrumentsActiveWhenIdle() const = 0;
-    virtual void setKeepPluginInstrumentsActiveWhenIdle(bool value) = 0;
-    virtual async::Channel<bool> keepPluginInstrumentsActiveWhenIdleChanged() const = 0;
-
     virtual bool shouldMeasureInputLag() const = 0;
 };
 }

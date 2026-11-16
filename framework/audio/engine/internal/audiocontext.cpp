@@ -316,6 +316,11 @@ void AudioContext::onSourceParamsChanged(Track& track, const AudioSourceParams& 
     }
 
     track.params.source = params;
+
+    //! NOTE The source may now want to be processed while stopped, or no longer
+    if (mode() == ProcessMode::Idle) {
+        m_mixer->setTracksToProcessWhenIdle(withSourcesToProcessWhenIdle(m_tracksToProcessWhenIdle));
+    }
 }
 
 void AudioContext::onControlParamsChanged(Track& track, const ControlParams& params)

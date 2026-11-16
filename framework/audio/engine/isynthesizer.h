@@ -63,6 +63,10 @@ public:
     //! even when only some of the tracks are (e.g. while a note of another track is auditioned)
     virtual bool shouldProcessWhenIdle() const { return false; }
 
+    //! Optional: applies a new configuration of the same sound without recreating the synthesizer.
+    //! Returns false if it can't, and the synthesizer is then recreated with the new parameters
+    virtual bool applyConfiguration(const AudioUnitConfig&) { return false; }
+
     virtual void prepareToPlay() = 0;
     virtual bool readyToPlay() const = 0;
     virtual async::Notification readyToPlayChanged() const = 0;

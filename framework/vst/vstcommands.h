@@ -27,7 +27,6 @@
 namespace muse::vst {
 inline static const muse::rcommand::Command VST_USE_OLDVIEW_COMMAND("command://vst/use-oldview");
 inline static const muse::rcommand::Command VST_USE_NEWVIEW_COMMAND("command://vst/use-newview");
-inline static const muse::rcommand::Command VST_KEEP_INSTRUMENTS_RUNNING_COMMAND("command://vst/keep-instruments-running");
 inline static const muse::rcommand::Command VST_OPEN_FX_EDITOR_COMMAND("command://vst/open-fx-editor");
 inline static const muse::rcommand::Command VST_OPEN_INSTRUMENT_EDITOR_COMMAND("command://vst/open-instrument-editor");
 }
