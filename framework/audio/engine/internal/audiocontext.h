@@ -67,7 +67,7 @@ public:
 
     // Tracks
     RetVal2<TrackId, TrackParams> addTrack(const std::string& trackName, io::IODevice* playbackData, const TrackParams& params) override;
-    // TODO(FontDaw B2-01a step 4): the AudioClipTrackData overload (see IAudioContext)
+    RetVal2<TrackId, TrackParams> addTrack(const std::string& trackName, const AudioClipTrackData& data, const TrackParams& params) override;
     RetVal2<TrackId, TrackParams> addTrack(const std::string& trackName, const mpe::PlaybackData& playbackData,
                                            const TrackParams& params) override;
     RetVal2<TrackId, TrackParams> addAuxTrack(const std::string& trackName, const TrackParams& params) override;
@@ -165,6 +165,8 @@ private:
     void onAuxSendsParamsChanged(Track& track, const AuxSendsParams& params);
 
     TrackId newTrackId() const;
+    //! The chain of an audio clip track around its source; adds it to the mixer
+    RetVal2<TrackId, TrackParams> addClipTrack(const std::string& trackName, AudioSourceNodePtr source, const TrackParams& params);
     void doAddTrack(const Track& track);
     const Track* track(const TrackId id) const;
     Track* track(const TrackId id);

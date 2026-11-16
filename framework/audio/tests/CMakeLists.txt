@@ -27,8 +27,8 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/audioresourcetypes_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/wavtestutils.h
     ${CMAKE_CURRENT_LIST_DIR}/wavdecoder_tests.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/fileaudionode_tests.cpp
-    # TODO(FontDaw B2-01a steps 1-3): audiocliptypes packing in rpcpacker_tests.cpp, audiodecoder_tests.cpp, clipaudionode_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/audiodecoder_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/clipaudionode_tests.cpp
 )
 
 include(SetupGTest)

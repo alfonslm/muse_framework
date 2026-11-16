@@ -61,8 +61,7 @@ public:
 
     async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, io::IODevice* data, const TrackParams& params) override;
     async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, const mpe::PlaybackData& data, const TrackParams& params) override;
-    // TODO(FontDaw B2-01a step 4): addTrack(name, const AudioClipTrackData&, params): adds a send stream for
-    // data.clipsChanged (StreamName::AudioClipsStream) and sends MsgCode::AddTrackWithAudioClips, as the PlaybackData overload does
+    async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, const AudioClipTrackData& data, const TrackParams& params) override;
     async::Promise<TrackId, TrackParams> addAuxTrack(const TrackName& name, const TrackParams& params) override;
 
     void removeTrack(const TrackId trackId) override;

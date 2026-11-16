@@ -105,6 +105,10 @@ private:
         AudioFade fadeOut;           // ends at the clip's own end (before the cut)
         double ownEnd = 0.0;         // the clip's own end, where its fadeOut ends
         double cutFade = 0.0;        // > 0 when cut by a later clip: fade length ending at `end`
+        //! Plays to the end of its source and is not cut: when resampling, the converter's tail may ring on
+        //! after `end` (as a whole file always did), up to `tailLimit` (the next clip's start)
+        bool ringsOut = false;
+        double tailLimit = 0.0;
     };
 
     //! Immutable once published. Sorted by start; the clips do not overlap.

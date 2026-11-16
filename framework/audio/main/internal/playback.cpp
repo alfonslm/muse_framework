@@ -377,6 +377,45 @@ async::Promise<TrackId, TrackParams> Playback::addTrack(const TrackName& trackNa
     }, PromiseType::AsyncByBody);
 }
 
+async::Promise<TrackId, TrackParams> Playback::addTrack(const TrackName& trackName,
+                                                        const AudioClipTrackData& data,
+                                                        const TrackParams& params)
+{
+#ifdef MUSE_CONFIGURATION_IS_WEB
+    NOT_SUPPORTED;
+    return async::make_promise<TrackId, TrackParams>([](auto /*resolve*/, auto reject) {
+        doReject(MsgCode::AddTrackWithAudioClips, reject, muse::make_ret(Ret::Code::NotSupported));
+        return Promise<TrackId, TrackParams>::dummy_result();
+    });
+#else
+    ONLY_AUDIO_MAIN_THREAD;
+    return async::make_promise<TrackId, TrackParams>([this, trackName, data, params](auto resolve, auto reject) {
+        ONLY_AUDIO_MAIN_THREAD;
+
+        rpc::StreamId clipsStreamId = channel()->addSendStream(StreamName::AudioClipsStream, data.clipsChanged);
+
+        ByteArray msgData = RpcPacker::pack(trackName, data.sources, data.clips, params, clipsStreamId);
+
+        Msg msg = rpc::make_request(ctxId(), MsgCode::AddTrackWithAudioClips, msgData);
+        channel()->send(msg, [resolve, reject](const Msg& res) {
+            ONLY_AUDIO_MAIN_THREAD;
+            RetVal2<TrackId, TrackParams> ret;
+            IF_ASSERT_FAILED(RpcPacker::unpack(res.data, ret)) {
+                doReject(MsgCode::AddTrackWithAudioClips, reject, audio::make_ret(Err::InvalidRpcData));
+                return;
+            }
+            if (ret.ret) {
+                (void)resolve(ret.val1, ret.val2);
+            } else {
+                doReject(MsgCode::AddTrackWithAudioClips, reject, ret.ret);
+            }
+        });
+        return Promise<TrackId, TrackParams>::dummy_result();
+    }, PromiseType::AsyncByBody);
+
+#endif // MUSE_CONFIGURATION_IS_WEB
+}
+
 async::Promise<TrackId, TrackParams> Playback::addAuxTrack(const TrackName& trackName, const TrackParams& params)
 {
     ONLY_AUDIO_MAIN_THREAD;

@@ -89,9 +89,7 @@ else()
         internal/nodes/mixernode.h
         internal/nodes/eventaudionode.cpp
         internal/nodes/eventaudionode.h
-        internal/nodes/fileaudionode.cpp
-        internal/nodes/fileaudionode.h
-        # TODO(FontDaw B2-01a step 3): internal/nodes/clipaudionode.cpp replaces fileaudionode.*
+        internal/nodes/clipaudionode.cpp
         internal/nodes/clipaudionode.h
         internal/nodes/fxnode.cpp
         internal/nodes/fxnode.h
@@ -166,7 +164,9 @@ else()
         internal/codecs/vorbisdecoder.h
         internal/codecs/wavdecoder.cpp
         internal/codecs/wavdecoder.h
-        # TODO(FontDaw B2-01a step 2): internal/codecs/audiodecoder.cpp
+        internal/codecs/wavaudiodecoder.cpp
+        internal/codecs/wavaudiodecoder.h
+        internal/codecs/audiodecoder.cpp
         internal/codecs/audiodecoder.h
     )
 

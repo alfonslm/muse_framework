@@ -300,9 +300,30 @@ void EngineRpcController::init()
             }
         });
 
-        // TODO(FontDaw B2-01a step 4): onLongRequest(ctxId, MsgCode::AddTrackWithAudioClips, ...): unpack
-        // (trackName, sources, clips, params, clipsStreamId), add a receive stream for clipsChanged that runs on this
-        // thread without an operation lock (ClipAudioNode's list swap is wait-free), call the context, answer.
+        onLongRequest(ctxId, MsgCode::AddTrackWithAudioClips, [this](const Msg& msg) {
+            ONLY_AUDIO_RPC_THREAD;
+
+            using RetType = RetVal2<TrackId, TrackParams>;
+
+            TrackName trackName;
+            AudioClipTrackData data;
+            TrackParams params;
+            rpc::StreamId clipsStreamId = 0;
+            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, trackName, data.sources, data.clips, params, clipsStreamId)) {
+                return make_response(msg, RpcPacker::pack(RetType::make_ret(Err::InvalidRpcData)));
+            }
+
+            //! NOTE New clip lists are applied on this thread without the operation lock:
+            //! the clip source hands them to the processing thread wait-free (ClipAudioNode::setClips)
+            channel()->addReceiveStream(StreamName::AudioClipsStream, clipsStreamId, data.clipsChanged);
+
+            if (auto actx = audioContext(msg.ctxId)) {
+                RetType ret = actx->addTrack(trackName, data, params);
+                return make_response(msg, RpcPacker::pack(ret));
+            } else {
+                return make_response(msg, RpcPacker::pack(RetType::make_ret(Err::InvalidContext)));
+            }
+        });
 
         onLongRequest(ctxId, MsgCode::AddAuxTrack, [this](const Msg& msg) {
             ONLY_AUDIO_RPC_THREAD;

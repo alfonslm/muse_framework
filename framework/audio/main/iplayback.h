@@ -28,6 +28,7 @@
 #include "global/async/promise.h"
 
 #include "../common/audiotypes.h"
+#include "../common/audiocliptypes.h"
 
 namespace muse::io {
 class IODevice;
@@ -60,14 +61,15 @@ public:
     virtual async::Promise<TrackIdList> trackIdList() const = 0;
     virtual async::Promise<RetVal<TrackName> > trackName(const TrackId trackId) const = 0;
 
-    //! NOTE A track that plays an audio file (WAV for now) from time zero, with the fx chain, mixer channel
+    //! NOTE A track that plays an audio file (WAV for now) from time zero (a one-clip list), with the fx chain, mixer channel
     //! and aux sends every track has. The engine reads `data` while it adds the track, on its own thread,
     //! and does not use it afterwards: keep the device alive, and leave it alone, until the promise is resolved or rejected.
     virtual async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, io::IODevice* data, const TrackParams& params) = 0;
-    // TODO(FontDaw B2-01a step 4): a track that plays a list of audio clips (audio/common/audiocliptypes.h):
-    //   virtual async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, const AudioClipTrackData& data, const TrackParams& params) = 0;
-    // The devices of data.sources follow the rule above (alive and untouched until the promise is resolved
-    // or rejected); new lists go through data.clipsChanged. The IODevice overload above stays, as a one-clip list.
+    //! NOTE A track that plays a list of audio clips (FontDaw; audio/common/audiocliptypes.h), with the same chain.
+    //! The devices of data.sources follow the rule above: alive and untouched until the promise is resolved or rejected.
+    //! A new list for the track is sent on data.clipsChanged and needs no answer (it can only use these sources).
+    virtual async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, const AudioClipTrackData& data,
+                                                          const TrackParams& params) = 0;
     virtual async::Promise<TrackId, TrackParams> addTrack(const TrackName& name, const mpe::PlaybackData& data,
                                                           const TrackParams& params) = 0;
 
