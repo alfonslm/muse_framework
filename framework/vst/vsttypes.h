@@ -23,6 +23,7 @@
 #define MUSE_VST_VSTTYPES_H
 
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -46,6 +47,13 @@
 #include "vstpluginattrs.h"
 
 namespace muse::vst {
+//! NOTE The keys of an AudioUnitConfig that hold the plugin's own state (see VstPluginInstance).
+//! Any other key is set by the host (keyswitch map, keep running when stopped, ...)
+inline bool isPluginStateConfigKey(const std::string& key)
+{
+    return key == "componentState" || key == "controllerState";
+}
+
 class IVstPluginInstance;
 using IVstPluginInstancePtr = std::shared_ptr<IVstPluginInstance>;
 using VstPluginInstanceId = int;

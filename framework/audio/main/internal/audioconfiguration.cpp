@@ -49,7 +49,6 @@ static const Settings::Key AUDIO_MEASURE_INPUT_LAG("audio", "io/measureInputLag"
 
 static const Settings::Key ONLINE_SOUNDS_PROCESS_IN_BACKGROUND("audio", "io/onlineSounds/processInBackground");
 static const Settings::Key USE_SOUNDFONT_LOWPASS_FILTER("audio", "synthesizer/useSoundFontLowPassFilter");
-static const Settings::Key KEEP_PLUGIN_INSTRUMENTS_ACTIVE_WHEN_IDLE("audio", "plugins/keepInstrumentsActiveWhenIdle");
 
 static const Settings::Key USER_SOUNDFONTS_PATHS("midi", "application/paths/mySoundfonts");
 
@@ -102,11 +101,6 @@ void AudioConfiguration::init()
     settings()->valueChanged(USE_SOUNDFONT_LOWPASS_FILTER).onReceive(nullptr, [this](const Val& val) {
         m_useSoundFontLowPassFilterChanged.send(val.toBool());
     });
-
-    settings()->setDefaultValue(KEEP_PLUGIN_INSTRUMENTS_ACTIVE_WHEN_IDLE, Val(false));
-    settings()->valueChanged(KEEP_PLUGIN_INSTRUMENTS_ACTIVE_WHEN_IDLE).onReceive(nullptr, [this](const Val& val) {
-        m_keepPluginInstrumentsActiveWhenIdleChanged.send(val.toBool());
-    });
 }
 
 AudioEngineConfig AudioConfiguration::engineConfig() const
@@ -115,7 +109,6 @@ AudioEngineConfig AudioConfiguration::engineConfig() const
     conf.autoProcessOnlineSoundsInBackground = autoProcessOnlineSoundsInBackground();
     conf.isLazyProcessingOfOnlineSoundsEnabled = conf.autoProcessOnlineSoundsInBackground;
     conf.useSoundFontLowPassFilter = useSoundFontLowPassFilter();
-    conf.keepPluginInstrumentsActiveWhenIdle = keepPluginInstrumentsActiveWhenIdle();
     return conf;
 }
 
@@ -278,23 +271,6 @@ void AudioConfiguration::setUseSoundFontLowPassFilter(bool value)
 async::Channel<bool> AudioConfiguration::useSoundFontLowPassFilterChanged() const
 {
     return m_useSoundFontLowPassFilterChanged;
-}
-
-bool AudioConfiguration::keepPluginInstrumentsActiveWhenIdle() const
-{
-    return settings()->value(KEEP_PLUGIN_INSTRUMENTS_ACTIVE_WHEN_IDLE).toBool();
-}
-
-void AudioConfiguration::setKeepPluginInstrumentsActiveWhenIdle(bool value)
-{
-    settings()->setSharedValue(KEEP_PLUGIN_INSTRUMENTS_ACTIVE_WHEN_IDLE, Val(value));
-
-    onEngineConfigChanged();
-}
-
-async::Channel<bool> AudioConfiguration::keepPluginInstrumentsActiveWhenIdleChanged() const
-{
-    return m_keepPluginInstrumentsActiveWhenIdleChanged;
 }
 
 bool AudioConfiguration::shouldMeasureInputLag() const

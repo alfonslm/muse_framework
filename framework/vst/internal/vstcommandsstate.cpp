@@ -41,12 +41,6 @@ void VstCommandsState::init()
     }
 
     updateCommandStates();
-
-    if (audioConfiguration()) {
-        audioConfiguration()->keepPluginInstrumentsActiveWhenIdleChanged().onReceive(this, [this](bool) {
-            updateCommandStates({ VST_KEEP_INSTRUMENTS_RUNNING_COMMAND });
-        });
-    }
 }
 
 void VstCommandsState::deinit()
@@ -78,8 +72,6 @@ CommandState VstCommandsState::commandState(const Command& command) const
         return CommandState(true, !isNewView);
     } else if (command == VST_USE_NEWVIEW_COMMAND) {
         return CommandState(true, isNewView);
-    } else if (command == VST_KEEP_INSTRUMENTS_RUNNING_COMMAND) {
-        return CommandState(true, audioConfiguration() && audioConfiguration()->keepPluginInstrumentsActiveWhenIdle());
     }
 
     return CommandState(true, false);

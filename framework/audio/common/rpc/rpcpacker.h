@@ -160,13 +160,13 @@ void unpack_custom(muse::msgpack::UnPacker& p, muse::mpe::PlaybackData& value);
 inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioEngineConfig& value)
 {
     p.process(value.autoProcessOnlineSoundsInBackground, value.isLazyProcessingOfOnlineSoundsEnabled,
-              value.useSoundFontLowPassFilter, value.keepPluginInstrumentsActiveWhenIdle);
+              value.useSoundFontLowPassFilter);
 }
 
 inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioEngineConfig& value)
 {
     p.process(value.autoProcessOnlineSoundsInBackground, value.isLazyProcessingOfOnlineSoundsEnabled,
-              value.useSoundFontLowPassFilter, value.keepPluginInstrumentsActiveWhenIdle);
+              value.useSoundFontLowPassFilter);
 }
 
 inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::OutputSpec& value)

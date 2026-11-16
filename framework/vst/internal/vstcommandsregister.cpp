@@ -46,14 +46,6 @@ static const std::vector<CommandInfo> s_commandInfos = {
         Availability::Internal
     },
     CommandInfo{
-        VST_KEEP_INSTRUMENTS_RUNNING_COMMAND,
-        TranslatableString("vst", "Keep instruments running when playback is stopped"),
-        TranslatableString("vst", "Don’t switch VST instruments off while playback is stopped"),
-        InputSchema(),
-        Decoration(Checkable::Yes),
-        Availability::Internal
-    },
-    CommandInfo{
         VST_OPEN_FX_EDITOR_COMMAND,
         TranslatableString("vst", "Open FX editor"),
         TranslatableString("vst", "Open FX editor"),

@@ -79,7 +79,16 @@ void VstSynthesiser::init(const OutputSpec& spec)
         m_pluginPtr->loadingCompleted().onNotify(this, onPluginLoaded);
     }
 
-    m_pluginPtr->pluginSettingsChanged().onReceive(this, [this](const muse::audio::AudioUnitConfig& newConfig) {
+    m_pluginPtr->pluginSettingsChanged().onReceive(this, [this](const muse::audio::AudioUnitConfig& pluginState) {
+        //! NOTE The plugin reports only its own state: keep the keys the host set (keyswitch map, keep running when
+        //! stopped...), or they would be lost from the project as soon as the plugin's state changes
+        muse::audio::AudioUnitConfig newConfig = pluginState;
+        for (const auto& [key, value] : m_params.configuration) {
+            if (!isPluginStateConfigKey(key)) {
+                newConfig.emplace(key, value);
+            }
+        }
+
         if (m_params.configuration == newConfig) {
             return;
         }
@@ -91,15 +100,6 @@ void VstSynthesiser::init(const OutputSpec& spec)
     m_sequencer.setOnOffStreamFlushed([this]() {
         m_vstAudioClient->flushSound();
     });
-
-    if (config()) {
-        config()->keepPluginInstrumentsActiveWhenIdleChanged().onReceive(this, [this](bool keep) {
-            //! NOTE While playing the plugin is active anyway
-            if (m_inited && !isModePlaying(m_mode)) {
-                m_vstAudioClient->setIsActive(keep);
-            }
-        });
-    }
 }
 
 void VstSynthesiser::applyKeyswitchMap()
@@ -231,7 +231,31 @@ void VstSynthesiser::setPlayheadPosition(audio::engine::PlayheadPositionPtr play
 
 bool VstSynthesiser::shouldProcessWhenIdle() const
 {
-    return config() && config()->keepPluginInstrumentsActiveWhenIdle();
+    const auto it = m_params.configuration.find(audio::KEEP_RUNNING_WHEN_STOPPED_CONFIG_KEY);
+    return it != m_params.configuration.cend() && it->second == "1";
+}
+
+bool VstSynthesiser::applyConfiguration(const audio::AudioUnitConfig& configuration)
+{
+    //! NOTE Only "keep running when stopped" can change on the fly; anything else (plugin state,
+    //! keyswitch map) is applied by recreating the synthesizer, as before
+    auto withoutKeepRunning = [](audio::AudioUnitConfig config) {
+        config.erase(audio::KEEP_RUNNING_WHEN_STOPPED_CONFIG_KEY);
+        return config;
+    };
+
+    if (withoutKeepRunning(m_params.configuration) != withoutKeepRunning(configuration)) {
+        return false;
+    }
+
+    m_params.configuration = configuration;
+
+    //! NOTE While playing the plugin is active anyway
+    if (m_inited && !isModePlaying(m_mode)) {
+        m_vstAudioClient->setIsActive(shouldProcessWhenIdle());
+    }
+
+    return true;
 }
 
 void VstSynthesiser::setOutputSpec(const audio::OutputSpec& spec)

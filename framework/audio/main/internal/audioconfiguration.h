@@ -80,10 +80,6 @@ public:
     void setUseSoundFontLowPassFilter(bool value) override;
     async::Channel<bool> useSoundFontLowPassFilterChanged() const override;
 
-    bool keepPluginInstrumentsActiveWhenIdle() const override;
-    void setKeepPluginInstrumentsActiveWhenIdle(bool value) override;
-    async::Channel<bool> keepPluginInstrumentsActiveWhenIdleChanged() const override;
-
     bool shouldMeasureInputLag() const override;
 
 private:
@@ -93,7 +89,6 @@ private:
     async::Channel<samples_t> m_samplesToPreallocateChanged;
     async::Channel<bool> m_autoProcessOnlineSoundsInBackgroundChanged;
     async::Channel<bool> m_useSoundFontLowPassFilterChanged;
-    async::Channel<bool> m_keepPluginInstrumentsActiveWhenIdleChanged;
 
     async::Notification m_currentAudioDriverChanged;
     bool m_outputDisabled = false;
