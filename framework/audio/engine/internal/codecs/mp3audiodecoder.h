@@ -34,7 +34,7 @@ namespace muse::audio::codec {
 //! - Gapless (MPG123_GAPLESS): the encoder delay and padding a LAME/Xing "Info" tag declares are
 //!   removed, so an MP3 made from a click track starts on the beat. A file without that tag (for
 //!   example FontDaw's own MP3 export today, FD-110) keeps the encoder's delay.
-//! - Output is float (MPG123_FORCE_FLOAT or the float encoding), interleaved, at the stream's rate
+//! - Output is 32-bit float (mpg123_format with MPG123_ENC_FLOAT_32 for every rate), interleaved, at the stream's rate
 //!   and channel count. A stream that changes rate or channels part way is damaged (error()).
 //! - open() scans the stream (mpg123_scan, which reads frame headers without decoding) so
 //!   info().frames is exact; the length check in readAll() then happens before decoding. Damaged

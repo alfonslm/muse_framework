@@ -27,7 +27,7 @@
 
 #include "global/types/retval.h"
 
-#include "audio/common/audiotypes.h"
+#include "codectypes.h"
 
 namespace muse::audio::codec {
 //! Decoded audio: interleaved floats, nominally in [-1, 1]

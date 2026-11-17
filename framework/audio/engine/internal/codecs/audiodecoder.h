@@ -29,7 +29,7 @@
 #include "global/types/ret.h"
 #include "global/types/retval.h"
 
-#include "audio/common/audiotypes.h"
+#include "codectypes.h"
 
 #include "wavdecoder.h"
 

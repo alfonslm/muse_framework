@@ -26,6 +26,7 @@ muse_create_module(muse_audio_codecs NO_QT NO_PCH NO_UNITY) # each decoder has i
 target_sources(muse_audio_codecs PRIVATE
     audiodecoder.cpp
     audiodecoder.h
+    codectypes.h
     wavdecoder.cpp
     wavdecoder.h
     wavaudiodecoder.cpp
