@@ -67,7 +67,8 @@ static std::optional<TransportEvent> mmcToTransportEvent(const IMMCDecoderPtr& d
 
 VstAudioClient::VstAudioClient()
 {
-    m_processContext.state = 0;
+    //! All fields zero, the optional ones included, until they are filled in
+    m_processContext = VstProcessContext {};
 }
 
 VstAudioClient::~VstAudioClient()
