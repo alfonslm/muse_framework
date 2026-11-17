@@ -52,6 +52,10 @@ target_sources(muse_vst PRIVATE
     internal/vstplugininstance.h
     internal/vstcomponenthandler.cpp
     internal/vstcomponenthandler.h
+    internal/vsthostcontext.cpp
+    internal/vsthostcontext.h
+    internal/vsttrace.cpp
+    internal/vsttrace.h
     internal/vstaudioclient.cpp
     internal/vstaudioclient.h
     internal/vstpluginprovider.cpp
@@ -101,6 +105,10 @@ if (MUSE_QT_SUPPORT)
 endif()
 
 target_no_warning(muse_vst -Wno-deprecated-declarations)
+
+if (MUSE_MODULE_VST_TESTS)
+    add_subdirectory(tests)
+endif()
 
 if (MUSE_MODULE_VST_QML)
     add_subdirectory(qml/Muse/Vst)

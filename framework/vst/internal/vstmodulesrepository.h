@@ -33,6 +33,7 @@
 #include "audio/common/iaudiothreadsecurer.h"
 
 #include "vsttypes.h"
+#include "vsthostcontext.h"
 
 namespace muse::vst {
 class VstModulesRepository : public IVstModulesRepository
@@ -59,7 +60,7 @@ public:
 private:
     audio::AudioResourceMetaList modulesMetaList(PluginType type) const;
 
-    PluginContext m_pluginContext;
+    VstHostContext m_pluginContext;
 
     mutable std::mutex m_mutex;
     mutable std::unordered_map<audio::AudioResourceId, PluginModulePtr> m_modules;

@@ -81,6 +81,12 @@ private:
 
     void addParamChange(const ParamChangeEvent& param);
 
+    //! VST trace (vsttrace.h); they do nothing while it is off
+    void traceProcessSetup(const VstProcessSetup& setup);
+    void traceProcessContext(const char* reason);
+    void traceBeforeProcess(audio::samples_t samplesPerChannel);
+    void traceAfterProcess(audio::samples_t samplesPerChannel);
+
     bool m_isActive = false;
     bool m_isOffline = false;
     muse::audio::gain_t m_volumeGain = 1.f; // 0.0 - 1.0
@@ -110,5 +116,18 @@ private:
     audio::OutputSpec m_outputSpec;
 
     midiremote::IMMCDecoderPtr m_mmcDecoder;
+
+    struct TraceState {
+        std::string name;
+        bool firstAfterActivation = true;
+        audio::samples_t expectedPosition = 0;
+        bool wasPlaying = false;
+        audio::samples_t samplesSinceReport = 0;
+        int callsSinceReport = 0;
+        int outputEventsSinceReport = 0;
+        bool awaitingSound = false;
+        audio::samples_t soundSearchStart = 0;
+    };
+    TraceState m_trace;
 };
 }

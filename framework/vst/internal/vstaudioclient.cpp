@@ -21,6 +21,12 @@
  */
 #include "vstaudioclient.h"
 
+#include <cmath>
+
+#include "pluginterfaces/vst/ivstaudioprocessor.h"
+
+#include "vsttrace.h"
+
 #include "log.h"
 
 using namespace muse;
@@ -80,6 +86,7 @@ void VstAudioClient::init(PluginType type, IVstPluginInstancePtr instance)
 
     m_type = type;
     m_pluginPtr = std::move(instance);
+    m_trace.name = m_pluginPtr->name();
 
     if (mmcDecoderFactory()) {
         m_mmcDecoder = mmcDecoderFactory()->makeDecoder();
@@ -273,6 +280,10 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
 
     m_processContext.projectTimeSamples = playbackPositionSamples;
 
+    if (trace::isEnabled()) {
+        traceBeforeProcess(samplesPerChannel);
+    }
+
     if (samplesPerChannel > m_outputSpec.samplesPerChannel) {
         OutputSpec newSpec = m_outputSpec;
         newSpec.samplesPerChannel = samplesPerChannel;
@@ -288,6 +299,10 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
     }
 
     m_needUpdateState = false;
+
+    if (trace::isEnabled()) {
+        traceAfterProcess(samplesPerChannel);
+    }
 
     if (m_type == PluginType::Instrument) {
         m_inputEvents.clear();
@@ -442,7 +457,12 @@ void VstAudioClient::updateProcessSetup()
     setup.sampleRate = m_outputSpec.sampleRate;
 
     if (processor->setupProcessing(setup) != Steinberg::kResultOk) {
+        trace::log("%s: setupProcessing failed", m_trace.name.c_str());
         return;
+    }
+
+    if (trace::isEnabled()) {
+        traceProcessSetup(setup);
     }
 
     setUpProcessData();
@@ -515,6 +535,8 @@ void VstAudioClient::processOutputEvents()
         return;
     }
 
+    m_trace.outputEventsSinceReport += count;
+
     if (m_isOffline || !m_mmcDecoder || !transportEventsDispatcher()) {
         m_outputEvents.clear();
         return;
@@ -571,6 +593,10 @@ void VstAudioClient::ensureActivity()
     processor->setProcessing(true);
 
     m_isActive = true;
+
+    m_trace.firstAfterActivation = true;
+    trace::log("%s: setActive(true), setProcessing(true) at %lld", m_trace.name.c_str(),
+               static_cast<long long>(m_processContext.projectTimeSamples));
 }
 
 void VstAudioClient::disableActivity()
@@ -598,6 +624,9 @@ void VstAudioClient::disableActivity()
     component->setActive(false);
 
     m_isActive = false;
+
+    trace::log("%s: setProcessing(false), setActive(false) at %lld", m_trace.name.c_str(),
+               static_cast<long long>(m_processContext.projectTimeSamples));
 }
 
 void VstAudioClient::flushBuffers()
@@ -629,5 +658,156 @@ void VstAudioClient::addParamChange(const ParamChangeEvent& param)
     Steinberg::Vst::IParamValueQueue* queue = m_inputParamChanges.addParameterData(param.paramId, dummyIdx);
     if (queue) {
         queue->addPoint(0, param.value, dummyIdx);
+    }
+}
+
+void VstAudioClient::traceProcessSetup(const VstProcessSetup& setup)
+{
+    IAudioProcessorPtr processor = pluginProcessor();
+    if (!processor) {
+        return;
+    }
+
+    //! NOTE The SDK asks for these on the UI thread once setup is done; hosts commonly ask
+    //! from wherever they set up processing, as here. Only done while tracing.
+    trace::log("%s: setupProcessing %s, block up to %d samples, %.0f Hz; latency %u samples, tail %u samples",
+               m_trace.name.c_str(), setup.processMode == VstProcessMode::kOffline ? "offline" : "realtime",
+               static_cast<int>(setup.maxSamplesPerBlock), setup.sampleRate,
+               static_cast<unsigned>(processor->getLatencySamples()), static_cast<unsigned>(processor->getTailSamples()));
+
+    Steinberg::FUnknownPtr<Steinberg::Vst::IProcessContextRequirements> requirements(processor);
+    if (requirements) {
+        trace::log("%s: process context requirements: %s", m_trace.name.c_str(),
+                   trace::processContextRequirementsToString(requirements->getProcessContextRequirements()).c_str());
+    } else {
+        trace::log("%s: does not say which process context fields it needs (no IProcessContextRequirements)",
+                   m_trace.name.c_str());
+    }
+}
+
+void VstAudioClient::traceProcessContext(const char* reason)
+{
+    using Context = VstProcessContext;
+    const Context& c = m_processContext;
+
+    char musical[160] = "";
+    int len = 0;
+    auto append = [&musical, &len](const char* format, auto... args) {
+        if (len < 0 || len >= static_cast<int>(sizeof(musical))) {
+            return;
+        }
+        const int n = std::snprintf(musical + len, sizeof(musical) - len, format, args...);
+        len = n < 0 ? -1 : len + n;
+    };
+
+    if (c.state & Context::kTempoValid) {
+        append(" tempo=%.3f", c.tempo);
+    }
+    if (c.state & Context::kProjectTimeMusicValid) {
+        append(" ppq=%.4f", c.projectTimeMusic);
+    }
+    if (c.state & Context::kBarPositionValid) {
+        append(" bar=%.4f", c.barPositionMusic);
+    }
+    if (c.state & Context::kTimeSigValid) {
+        append(" sig=%d/%d", static_cast<int>(c.timeSigNumerator), static_cast<int>(c.timeSigDenominator));
+    }
+    if (c.state & Context::kCycleValid) {
+        append(" cycle=%.4f-%.4f", c.cycleStartMusic, c.cycleEndMusic);
+    }
+    if (c.state & Context::kContTimeValid) {
+        append(" cont=%lld", static_cast<long long>(c.continousTimeSamples));
+    }
+    if (c.state & Context::kSystemTimeValid) {
+        append(" sys=%lld", static_cast<long long>(c.systemTime));
+    }
+
+    trace::log("%s: %s: pos=%lld (%.3f s) state=%s%s", m_trace.name.c_str(), reason,
+               static_cast<long long>(c.projectTimeSamples),
+               c.sampleRate > 0 ? static_cast<double>(c.projectTimeSamples) / c.sampleRate : 0.0,
+               trace::processContextStateToString(c.state).c_str(), musical);
+}
+
+void VstAudioClient::traceBeforeProcess(samples_t samplesPerChannel)
+{
+    const bool playing = (m_processContext.state & VstProcessContext::kPlaying) != 0;
+    const samples_t position = static_cast<samples_t>(m_processContext.projectTimeSamples);
+
+    const char* reason = nullptr;
+    if (m_trace.firstAfterActivation) {
+        reason = "first block after activation";
+    } else if (playing != m_trace.wasPlaying) {
+        reason = playing ? "transport starts" : "transport stops";
+    } else if (position != m_trace.expectedPosition) {
+        reason = "position jumps";
+    }
+
+    if (reason) {
+        traceProcessContext(reason);
+
+        if (playing) {
+            m_trace.awaitingSound = true;
+            m_trace.soundSearchStart = position;
+        }
+    }
+
+    m_trace.firstAfterActivation = false;
+    m_trace.wasPlaying = playing;
+    m_trace.expectedPosition = position + samplesPerChannel;
+
+    ++m_trace.callsSinceReport;
+    m_trace.samplesSinceReport += samplesPerChannel;
+
+    const double sampleRate = m_processContext.sampleRate;
+    if (sampleRate > 0 && m_trace.samplesSinceReport >= static_cast<samples_t>(sampleRate)) {
+        trace::log("%s: %d process calls for %lld samples, %d output events, since the last report", m_trace.name.c_str(),
+                   m_trace.callsSinceReport, static_cast<long long>(m_trace.samplesSinceReport), m_trace.outputEventsSinceReport);
+        traceProcessContext("each second");
+        m_trace.callsSinceReport = 0;
+        m_trace.samplesSinceReport = 0;
+        m_trace.outputEventsSinceReport = 0;
+    }
+}
+
+void VstAudioClient::traceAfterProcess(samples_t samplesPerChannel)
+{
+    if (!m_trace.awaitingSound || !m_processData.outputs) {
+        return;
+    }
+
+    //! The first sample above -60 dBFS after a start or a jump: where the plugin's first sound
+    //! lands, in host samples. Compare it with where its first note should be.
+    static constexpr float THRESHOLD = 0.001f;
+    static constexpr double GIVE_UP_SECS = 10.0;
+
+    const samples_t blockStart = static_cast<samples_t>(m_processContext.projectTimeSamples);
+
+    for (const int busIndex : m_activeOutputBusses) {
+        if (busIndex >= m_processData.numOutputs) {
+            continue;
+        }
+
+        const Steinberg::Vst::AudioBusBuffers& bus = m_processData.outputs[busIndex];
+        for (samples_t i = 0; i < samplesPerChannel; ++i) {
+            for (int ch = 0; ch < bus.numChannels; ++ch) {
+                if (std::fabs(bus.channelBuffers32[ch][i]) > THRESHOLD) {
+                    const samples_t at = blockStart + i;
+                    trace::log("%s: first sound at %lld (%.3f s), %lld samples (%.1f ms) after the start or jump at %lld",
+                               m_trace.name.c_str(), static_cast<long long>(at), at / m_processContext.sampleRate,
+                               static_cast<long long>(at - m_trace.soundSearchStart),
+                               1000.0 * (at - m_trace.soundSearchStart) / m_processContext.sampleRate,
+                               static_cast<long long>(m_trace.soundSearchStart));
+                    m_trace.awaitingSound = false;
+                    return;
+                }
+            }
+        }
+    }
+
+    const double searched = static_cast<double>(blockStart + samplesPerChannel - m_trace.soundSearchStart);
+    if (m_processContext.sampleRate > 0 && searched / m_processContext.sampleRate > GIVE_UP_SECS) {
+        trace::log("%s: no sound within %.0f s after the start or jump at %lld", m_trace.name.c_str(), GIVE_UP_SECS,
+                   static_cast<long long>(m_trace.soundSearchStart));
+        m_trace.awaitingSound = false;
     }
 }

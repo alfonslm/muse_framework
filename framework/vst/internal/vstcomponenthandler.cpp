@@ -21,6 +21,8 @@
  */
 #include "vstcomponenthandler.h"
 
+#include "vsttrace.h"
+
 using namespace muse::vst;
 using namespace muse::async;
 
@@ -36,6 +38,9 @@ IMPLEMENT_REFCOUNT(VstComponentHandler)
     if (::Steinberg::FUnknownPrivate::iidEqual(_iid, IAdvancedComponentHandler::iid)) {
         return m_advancedHandler->queryInterface(_iid, obj);
     }
+
+    trace::log("%s asks the component handler for %s: no", m_traceName.c_str(), trace::iidName(_iid).c_str());
+
     *obj = nullptr;
     return ::Steinberg::kNoInterface;
 }
@@ -60,6 +65,11 @@ void VstComponentHandler::setSuppressNotify(bool suppress)
     m_advancedHandler->setSuppressNotify(suppress);
 }
 
+void VstComponentHandler::setTraceName(const std::string& name)
+{
+    m_traceName = name;
+}
+
 Steinberg::tresult VstComponentHandler::beginEdit(Steinberg::Vst::ParamID /*id*/)
 {
     return Steinberg::kResultOk;
@@ -67,6 +77,20 @@ Steinberg::tresult VstComponentHandler::beginEdit(Steinberg::Vst::ParamID /*id*/
 
 Steinberg::tresult VstComponentHandler::performEdit(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue valueNormalized)
 {
+    if (trace::isEnabled()) {
+        //! Counted, not logged one by one: a knob turned in the editor sends many
+        const auto now = std::chrono::steady_clock::now();
+        if (m_traceEditCount == 0) {
+            m_traceEditWindowStart = now;
+        }
+        ++m_traceEditCount;
+        if (now - m_traceEditWindowStart >= std::chrono::seconds(1)) {
+            trace::log("%s changed parameters %d times in %.1f s (last: id %u)", m_traceName.c_str(), m_traceEditCount,
+                       std::chrono::duration<double>(now - m_traceEditWindowStart).count(), static_cast<unsigned>(id));
+            m_traceEditCount = 0;
+        }
+    }
+
     if (!m_advancedHandler->suppressNotify()) {
         m_paramChanged.send(id, valueNormalized);
     }
@@ -83,8 +107,11 @@ Steinberg::tresult VstComponentHandler::endEdit(Steinberg::Vst::ParamID /*id*/)
     return Steinberg::kResultOk;
 }
 
-Steinberg::tresult VstComponentHandler::restartComponent(Steinberg::int32 /*flags*/)
+Steinberg::tresult VstComponentHandler::restartComponent(Steinberg::int32 flags)
 {
+    trace::log("%s asks the host to restart the component: %s (ignored)", m_traceName.c_str(),
+               trace::restartFlagsToString(flags).c_str());
+
     return Steinberg::kResultOk;
 }
 
