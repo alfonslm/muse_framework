@@ -150,6 +150,12 @@ void VstFxProcessor::process(float* buffer, samples_t sampleCount, samples_t pla
         m_vstAudioClient->clearCycle();
     }
 
+    VstTransportInfo clock;
+    if (m_playheadPosition) {
+        transportClockAt(*m_playheadPosition, 0, static_cast<double>(m_outputSpec.sampleRate), clock);
+    }
+    m_vstAudioClient->setTransportClock(clock);
+
     m_vstAudioClient->process(buffer, sampleCount, playbackPositionSamples, musicalPosition);
 }
 

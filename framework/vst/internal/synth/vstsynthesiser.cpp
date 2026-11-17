@@ -267,6 +267,12 @@ samples_t VstSynthesiser::process(float* buffer, samples_t samplesPerChannel)
                 m_vstAudioClient->clearCycle();
             }
 
+            VstTransportInfo clock;
+            if (m_playheadPosition) {
+                transportClockAt(*m_playheadPosition, segmentStart, static_cast<double>(m_outputSpec.sampleRate), clock);
+            }
+            m_vstAudioClient->setTransportClock(clock);
+
             processedSamples += m_vstAudioClient->process(buffer + segmentStart * m_outputSpec.audioChannelCount, segmentSamples,
                                                           m_currentPosition.samples(), musicalPosition, volumeGainChanges);
 

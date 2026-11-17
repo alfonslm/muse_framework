@@ -311,7 +311,6 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
     }
 
     m_needUpdateState = false;
-    m_continuousSamples += samplesPerChannel;
 
     if (trace::isEnabled()) {
         traceAfterProcess(samplesPerChannel);
@@ -385,8 +384,11 @@ void VstAudioClient::updateProcessContext(samples_t playbackPositionSamples, con
     info.hasCycle = m_hasCycle;
     info.cycleStartQuarters = m_cycleStartQuarters;
     info.cycleEndQuarters = m_cycleEndQuarters;
-    info.continuousSamples = m_continuousSamples;
-    info.systemTimeNs = vstSystemTimeNs();
+    info.offline = m_processMode == VstProcessMode::kOffline;
+    info.hasContinuousTime = m_clock.hasContinuousTime;
+    info.continuousSamples = m_clock.continuousSamples;
+    info.hasSystemTime = m_clock.hasSystemTime;
+    info.systemTimeNs = m_clock.systemTimeNs;
 
     fillProcessContext(m_processContext, info);
 }
@@ -403,13 +405,12 @@ void VstAudioClient::clearCycle()
     m_hasCycle = false;
 }
 
-void VstAudioClient::updateProcessContextRequirements()
+void VstAudioClient::setTransportClock(const VstTransportInfo& clock)
 {
-    IAudioProcessorPtr processor = pluginProcessor();
-    Steinberg::FUnknownPtr<Steinberg::Vst::IProcessContextRequirements> requirements(processor);
-
-    m_knowsProcessContextRequirements = requirements;
-    m_processContextRequirements = requirements ? requirements->getProcessContextRequirements() : 0;
+    m_clock.hasContinuousTime = clock.hasContinuousTime;
+    m_clock.continuousSamples = clock.continuousSamples;
+    m_clock.hasSystemTime = clock.hasSystemTime;
+    m_clock.systemTimeNs = clock.systemTimeNs;
 }
 
 void VstAudioClient::setUpProcessData()
@@ -508,9 +509,6 @@ void VstAudioClient::updateProcessSetup()
         trace::log("%s: setupProcessing failed", m_trace.name.c_str());
         return;
     }
-
-    //! NOTE The host says it supports IProcessContextRequirements (VstHostContext), so it asks
-    updateProcessContextRequirements();
 
     if (trace::isEnabled()) {
         traceProcessSetup(setup);
@@ -734,9 +732,10 @@ void VstAudioClient::traceProcessSetup(const VstProcessSetup& setup)
                static_cast<int>(setup.maxSamplesPerBlock), setup.sampleRate,
                static_cast<unsigned>(processor->getLatencySamples()), static_cast<unsigned>(processor->getTailSamples()));
 
-    if (m_knowsProcessContextRequirements) {
+    const std::optional<uint32_t> requirements = m_pluginPtr ? m_pluginPtr->processContextRequirements() : std::nullopt;
+    if (requirements.has_value()) {
         trace::log("%s: process context requirements: %s", m_trace.name.c_str(),
-                   trace::processContextRequirementsToString(m_processContextRequirements).c_str());
+                   trace::processContextRequirementsToString(requirements.value()).c_str());
     } else {
         trace::log("%s: does not say which process context fields it needs (no IProcessContextRequirements)",
                    m_trace.name.c_str());

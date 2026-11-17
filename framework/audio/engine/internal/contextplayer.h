@@ -74,6 +74,8 @@ public:
     const TimePosition& currentPosition() const override;
     MusicalPosition musicalPosition(const TimePosition& position) const override;
     Loop loop() const override;
+    int64_t processedSamples() const override;
+    int64_t blockPresentationTimeNs() const override;
 
 private:
 
@@ -141,6 +143,7 @@ private:
     std::atomic<const MusicalTimeMap*> m_musicalTimeMapForProc = nullptr;
     std::vector<RetiredMap> m_retiredMaps;
     std::atomic<uint64_t> m_processedBlocks = 0;
+    std::atomic<int64_t> m_processedSamples = 0;
 
     async::Channel<TimeEvent> m_timeEvent;
 

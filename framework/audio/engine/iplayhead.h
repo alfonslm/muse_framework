@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include "audio/common/timeposition.h"
@@ -46,6 +47,14 @@ public:
     };
 
     virtual Loop loop() const { return Loop(); }
+
+    //! Samples processed by the engine before the block being processed, playing or not; one clock
+    //! for all tracks, not reset by seeks or loop jumps. -1 if not known (e.g. offline processing).
+    virtual int64_t processedSamples() const { return -1; }
+
+    //! When the first sample of the block being processed is expected to be heard, on the steady
+    //! clock of audio/common/audioclock.h, in nanoseconds; 0 if not known
+    virtual int64_t blockPresentationTimeNs() const { return 0; }
 };
 
 class IPlayhead : public IPlayheadPosition

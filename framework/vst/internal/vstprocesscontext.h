@@ -39,18 +39,27 @@ struct VstTransportInfo {
     double cycleStartQuarters = 0.0;
     double cycleEndQuarters = 0.0;
 
-    int64_t continuousSamples = 0;          // time that keeps running through loop jumps and seeks
-    int64_t systemTimeNs = 0;               // vstSystemTimeNs() when the call is made
+    bool offline = false;                   // offline processing (export): no clock is valid
+
+    bool hasContinuousTime = false;         // the engine's clock is known
+    int64_t continuousSamples = 0;          // the engine's processed samples: runs on through loop jumps and seeks
+    bool hasSystemTime = false;
+    int64_t systemTimeNs = 0;               // when the call's first sample is heard, on vstSystemTimeNs()'s clock
 };
 
 //! Fills the transport fields of `context` and their valid flags from `info`. Fields without valid
 //! information get their flag cleared. kPlaying, kRecording and the sample rate are left as they are.
 void fillProcessContext(VstProcessContext& context, const VstTransportInfo& info);
 
+//! The engine's clocks for a process call that starts `offsetInBlock` samples into the engine's block
+void transportClockAt(const audio::engine::IPlayheadPosition& playhead, int64_t offsetInBlock, double sampleRate,
+                      VstTransportInfo& info);
+
 //! The playback loop in quarter notes, if one is set and the music's tempo is known
 bool loopInQuarters(const audio::engine::IPlayheadPosition& playhead, audio::sample_rate_t sampleRate, double& start,
                     double& end);
 
-//! The host's clock for ProcessContext::systemTime and IComponentHandlerSystemTime, in nanoseconds
+//! The host's clock for ProcessContext::systemTime and IComponentHandlerSystemTime, in nanoseconds:
+//! the steady clock of audio/common/audioclock.h
 int64_t vstSystemTimeNs();
 }

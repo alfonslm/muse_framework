@@ -49,9 +49,13 @@ public:
     }
 
     Loop loop() const override { return loopValue; }
+    int64_t processedSamples() const override { return processed; }
+    int64_t blockPresentationTimeNs() const override { return presentationNs; }
 
     audio::MusicalTimeMap map;
     Loop loopValue;
+    int64_t processed = -1;
+    int64_t presentationNs = 0;
 
 private:
     audio::TimePosition m_position;
@@ -66,7 +70,9 @@ TEST(Vst_ProcessContextTests, OnlyTimeWithoutMusic)
 
     VstTransportInfo info;
     info.positionSamples = 96000;
+    info.hasContinuousTime = true;
     info.continuousSamples = 123;
+    info.hasSystemTime = true;
     info.systemTimeNs = 456;
 
     fillProcessContext(context, info);
@@ -101,8 +107,7 @@ TEST(Vst_ProcessContextTests, MusicalPositionAndCycle)
 
     const uint32_t expected = ProcessContext::kTempoValid | ProcessContext::kProjectTimeMusicValid
                               | ProcessContext::kBarPositionValid | ProcessContext::kTimeSigValid
-                              | ProcessContext::kCycleValid | ProcessContext::kCycleActive
-                              | ProcessContext::kContTimeValid | ProcessContext::kSystemTimeValid;
+                              | ProcessContext::kCycleValid | ProcessContext::kCycleActive;
     EXPECT_EQ(context.state, expected);
 }
 
@@ -149,4 +154,66 @@ TEST(Vst_ProcessContextTests, SystemTimeRuns)
     const int64_t second = vstSystemTimeNs();
     EXPECT_GT(first, 0);
     EXPECT_GE(second, first);
+}
+
+TEST(Vst_ProcessContextTests, NoBarsNoBarPosition)
+{
+    audio::MusicalTimeMap map;
+    map.tempo = { { 0.0, 0.0, 2.0 } };
+
+    ProcessContext context {};
+    VstTransportInfo info;
+    info.musical = map.positionAt(1.0);
+
+    fillProcessContext(context, info);
+
+    EXPECT_TRUE(context.state & ProcessContext::kTempoValid);
+    EXPECT_FALSE(context.state & ProcessContext::kBarPositionValid);
+    EXPECT_FALSE(context.state & ProcessContext::kTimeSigValid);
+}
+
+TEST(Vst_ProcessContextTests, OfflineHasNoClocks)
+{
+    ProcessContext context {};
+    VstTransportInfo info;
+    info.offline = true;
+    info.hasContinuousTime = true;
+    info.continuousSamples = 123;
+    info.hasSystemTime = true;
+    info.systemTimeNs = 456;
+
+    fillProcessContext(context, info);
+
+    EXPECT_FALSE(context.state & ProcessContext::kSystemTimeValid);
+    EXPECT_FALSE(context.state & ProcessContext::kContTimeValid);
+}
+
+TEST(Vst_ProcessContextTests, OneClockForAllPlugins)
+{
+    FakePlayhead playhead;
+    playhead.processed = 48000;
+    playhead.presentationNs = 1000000000;
+
+    //! Two plugins processed in the same block, from its start: the same values
+    VstTransportInfo first;
+    VstTransportInfo second;
+    transportClockAt(playhead, 0, 48000.0, first);
+    transportClockAt(playhead, 0, 48000.0, second);
+    EXPECT_TRUE(first.hasContinuousTime);
+    EXPECT_EQ(first.continuousSamples, second.continuousSamples);
+    EXPECT_EQ(first.systemTimeNs, second.systemTimeNs);
+    EXPECT_EQ(first.continuousSamples, 48000);
+    EXPECT_EQ(first.systemTimeNs, 1000000000);
+
+    //! A call that starts 480 samples into the block: 10 ms later
+    VstTransportInfo later;
+    transportClockAt(playhead, 480, 48000.0, later);
+    EXPECT_EQ(later.continuousSamples, 48480);
+    EXPECT_EQ(later.systemTimeNs, 1010000000);
+
+    //! The engine's clock is not known (offline): no continuous time
+    playhead.processed = -1;
+    VstTransportInfo unknown;
+    transportClockAt(playhead, 0, 48000.0, unknown);
+    EXPECT_FALSE(unknown.hasContinuousTime);
 }

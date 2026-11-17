@@ -26,6 +26,7 @@
 
 #include "../ivstplugininstance.h"
 #include "../vsttypes.h"
+#include "vstprocesscontext.h"
 
 #include "modularity/ioc.h"
 #include "audio/common/musicaltimemap.h"
@@ -73,6 +74,9 @@ public:
     void setCycle(double startQuarters, double endQuarters);
     void clearCycle();
 
+    //! The engine's clocks for the next process() call (see transportClockAt() in vstprocesscontext.h)
+    void setTransportClock(const VstTransportInfo& clock);
+
     ParamsMapping paramsMapping(const std::set<Steinberg::Vst::CtrlNumber>& controllers) const;
 
 private:
@@ -81,7 +85,6 @@ private:
 
     void setUpProcessData();
     void updateProcessContext(audio::samples_t playbackPositionSamples, const audio::MusicalPosition& musicalPosition);
-    void updateProcessContextRequirements();
     void updateProcessSetup();
     void extractInputSamples(muse::audio::samples_t sampleCount, const float* sourceBuffer);
 
@@ -136,11 +139,7 @@ private:
     bool m_hasCycle = false;
     double m_cycleStartQuarters = 0.0;
     double m_cycleEndQuarters = 0.0;
-    int64_t m_continuousSamples = 0;
-
-    //! What the plugin says it needs from the process context (IProcessContextRequirements); 0 if it does not say
-    uint32_t m_processContextRequirements = 0;
-    bool m_knowsProcessContextRequirements = false;
+    VstTransportInfo m_clock; // only the clock fields are used
 
     struct TraceState {
         std::string name;
