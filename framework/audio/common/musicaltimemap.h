@@ -49,6 +49,10 @@ struct MusicalPosition {
 //!   pickup's length. This keeps plugins on the same grid as a MIDI export of the same music, whose
 //!   tick 0 is also the start of the music; neither negative positions nor a padded first bar can be
 //!   written to a MIDI file without moving the music in time.
+//!   What follows for plugins: downbeats are found through barPositionMusic and the time signature,
+//!   as after any bar of odd length; a plugin that takes its grid from whole numbers of
+//!   projectTimeMusic is off by the pickup's fraction when the pickup is not a whole number of
+//!   quarters; a plugin that numbers bars counts the pickup as bar 1.
 //! - Time is played time: repeats unrolled, the playback speed applied, pauses included.
 //! - A pause (caesura, breath, section-break pause) can be given two ways. FontDaw gives it as extra
 //!   beats: its bar is lengthened by whole beats (a BarPoint with lengthQuarters, and one for the bar
