@@ -30,6 +30,16 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/audiodecoder_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/clipaudionode_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/musicaltimemap_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/codectestutils.h
+    ${CMAKE_CURRENT_LIST_DIR}/sndfileaudiodecoder_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mp3audiodecoder_tests.cpp
 )
+
+# FontDaw: the clip decoders are a library of their own (engine/internal/codecs, F4)
+set(MODULE_TEST_LINK
+    muse_audio_codecs
+)
+
+set(MODULE_TEST_DATA_ROOT ${CMAKE_CURRENT_LIST_DIR})
 
 include(SetupGTest)

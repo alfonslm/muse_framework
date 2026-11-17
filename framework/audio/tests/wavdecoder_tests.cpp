@@ -33,9 +33,6 @@
 
 #include "wavtestutils.h"
 
-//! NOTE The unit under test is compiled into this file: this test binary does not link the audio engine
-#include "audio/engine/internal/codecs/wavdecoder.cpp"
-
 using namespace muse;
 using namespace muse::audio;
 using namespace muse::audio::codec;
