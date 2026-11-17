@@ -216,20 +216,30 @@ RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackNam
 
     using RetType = RetVal2<TrackId, TrackParams>;
 
-    //! NOTE Every device is read here, once, and is not used after this call returns
+    //! NOTE Every device is read here, once, and is not used after this call returns.
+    //! A source that cannot be read or decoded is left out (its clips are dropped when the list is
+    //! built), so one bad file does not silence the others. Only a track none of whose sources can be
+    //! read is refused.
     ClipAudioNode::Sources sources;
+    Ret lastError = make_ret(Err::InvalidAudioFilePath);
     for (const AudioClipSource& s : data.sources) {
         if (s.key.empty() || sources.find(s.key) != sources.end()) {
-            LOGE() << "audio clip source without a key, or with a key used twice";
-            return RetType::make_ret(Err::InvalidAudioFilePath);
+            LOGE() << "audio clip source without a key, or with a key used twice: left out";
+            continue;
         }
 
         RetVal<codec::PcmAudio> audio = decodeDevice(reinterpret_cast<io::IODevice*>(s.device));
         if (!audio.ret) {
-            return RetType::make_ret(audio.ret);
+            LOGE() << "audio clip source " << s.key << " cannot be decoded, its clips stay silent: " << audio.ret.toString();
+            lastError = audio.ret;
+            continue;
         }
 
         sources.emplace(s.key, std::make_shared<const codec::PcmAudio>(std::move(audio.val)));
+    }
+
+    if (sources.empty() && !data.sources.empty()) {
+        return RetType::make_ret(lastError);
     }
 
     ClipAudioNodePtr source = std::make_shared<ClipAudioNode>(std::move(sources), data.clips);

@@ -100,6 +100,10 @@ constexpr float MAX_GAIN_DB = 48.f;
 //! index (a 64-bit integer) at up to 384 kHz. About 115 days.
 constexpr double MAX_CLIP_SECS = 1e7;
 
+//! Clips that overlap by less than this only touch (rounding of start + length); no cut fade.
+//! Well under a sample at any rate the engine supports.
+constexpr double TOUCH_EPSILON_SECS = 1e-7;
+
 //! A clip whose length is within this of the rest of its source plays to the source's end
 //! (the app stores seconds with 6 decimals)
 constexpr double RINGS_OUT_EPSILON_SECS = 2e-6;
@@ -259,9 +263,14 @@ std::unique_ptr<ClipAudioNode::ClipSet> ClipAudioNode::buildClipSet(const AudioC
             const double nextStart = set->clips[i + 1].start;
             clip.tailLimit = nextStart;
             if (nextStart < clip.end) {
+                //! NOTE Two halves of a split meet where the left one ends, but `start + length` in
+                //! doubles can land a hair past the right one's start: that is touching, not overlapping
+                const bool overlaps = clip.end - nextStart > TOUCH_EPSILON_SECS;
                 clip.end = nextStart;
-                clip.cutFade = std::min(OVERLAP_CUT_FADE_SECS, clip.end - clip.start);
-                clip.ringsOut = false;
+                if (overlaps) {
+                    clip.cutFade = std::min(OVERLAP_CUT_FADE_SECS, clip.end - clip.start);
+                    clip.ringsOut = false;
+                }
             }
         }
         if (clip.end > clip.start) {
@@ -425,11 +434,16 @@ void ClipAudioNode::renderClip(const PlayableClip& clip, samples_t blockStart, f
     const bool hasEnvelope = clip.fadeIn.length.raw() > 0.0 || clip.fadeOut.length.raw() > 0.0 || clip.cutFade > 0.0;
 
     if (sourceRate == outRate) {
-        //! NOTE Whole frames: a clip at zero with gain 1 and no fades gives the source's samples exactly
-        const samples_t offsetFrames = static_cast<samples_t>(std::llround(clip.sourceOffset * sourceRate));
+        //! NOTE Whole frames: a clip at zero with gain 1 and no fades gives the source's samples exactly.
+        //! The difference start - offset is rounded once (not each of the two), so the halves of a clip
+        //! split off the sample grid take the same source frames as the unsplit clip
+        const long long shift = std::llround((clip.start - clip.sourceOffset) * sourceRate); // signed (samples_t is not)
         for (samples_t f = from; f < to; ++f) {
-            const samples_t src = f - startFrame + offsetFrames;
-            if (src >= sourceFrames) {
+            const long long src = static_cast<long long>(f) - shift;
+            if (src < 0) {
+                continue;
+            }
+            if (src >= static_cast<long long>(sourceFrames)) {
                 break;
             }
             float g = clip.gain;
@@ -438,7 +452,7 @@ void ClipAudioNode::renderClip(const PlayableClip& clip, samples_t blockStart, f
             }
             float* out = buffer + (f - blockStart) * outChannels;
             for (audioch_t ch = 0; ch < outChannels; ++ch) {
-                out[ch] = g * sourceSample(audio, src, ch, outChannels); // clips never share a frame
+                out[ch] = g * sourceSample(audio, static_cast<samples_t>(src), ch, outChannels); // clips never share a frame
             }
         }
         return;
@@ -449,14 +463,16 @@ void ClipAudioNode::renderClip(const PlayableClip& clip, samples_t blockStart, f
     }
 
     const double step = static_cast<double>(sourceRate) / outRate;
+    const double startFrames = clip.start * outRate;
     const double sourceOffsetFrames = clip.sourceOffset * sourceRate;
 
     std::array<float, MAX_OUT_CHANNELS> frame {};
     for (samples_t f = from; f < to; ++f) {
         const double t = static_cast<double>(f) / outRate;
-        //! NOTE Counted from the clip's first frame, so a clip at zero with no offset takes exactly the
-        //! positions a whole file always took (frame * step)
-        const double sourcePos = static_cast<double>(f - startFrame) * step + sourceOffsetFrames;
+        //! NOTE Counted from the clip's exact (unrounded) start, so the halves of a clip split off the
+        //! sample grid take the same positions as the unsplit clip; a clip at zero with no offset takes
+        //! exactly the positions a whole file always took (frame * step + 0.0)
+        const double sourcePos = (static_cast<double>(f) - startFrames) * step + sourceOffsetFrames;
 
         std::fill(frame.begin(), frame.begin() + outChannels, 0.f);
         renderResampledFrame(audio, sourceFrames, outRate, sourcePos, frame.data(), outChannels);

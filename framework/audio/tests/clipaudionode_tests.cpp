@@ -23,8 +23,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <atomic>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <vector>
 
 // pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init.
@@ -777,4 +779,132 @@ TEST(Audio_ClipAudioNodeTests, HugeTimesAreRefused)
             EXPECT_FALSE(node->firstNoteTime().has_value()) << huge;
         }
     }
+}
+
+namespace {
+//! The unsplit clip, and its two halves cut at a time T that is not on a sample boundary
+struct SplitLists {
+    AudioClipList whole;
+    AudioClipList split;
+    double splitSecs = 0.0;
+};
+
+SplitLists makeSplitLists()
+{
+    const double start = 0.0100104; // 480.4992 frames at 48 kHz
+    const double offset = 0.00052;
+    const double length = 0.02;
+    const double at = start + 0.0073334; // 832.4992 frames at 48 kHz
+
+    //! As a model split computes it, and then made to land a hair past `at` (start + lengthA in doubles
+    //! can): the node must treat that as touching, not as an overlap that fades A out
+    double lengthA = at - start;
+    while (start + lengthA <= at) {
+        lengthA = std::nextafter(lengthA, 1.0);
+    }
+
+    SplitLists l;
+    l.splitSecs = at;
+    l.whole = { makeClip("a", start, length, offset) };
+    l.split = { makeClip("a", start, lengthA, offset), makeClip("a", at, length - lengthA, offset + lengthA) };
+    return l;
+}
+}
+
+TEST(Audio_ClipAudioNodeTests, SplitClipPlaysLikeTheUnsplitOne)
+{
+    // Ramp: every source frame has its own value, so one skipped or repeated frame shows
+    ClipAudioNode::Sources sources { { "a", makeRamp(48000, 1, 4800) } };
+    const SplitLists l = makeSplitLists();
+    const samples_t total = 1920; // 0.04 s
+
+    const std::vector<float> whole = render(makeClipNode(sources, l.whole, 48000), total, 64);
+    const std::vector<float> split = render(makeClipNode(sources, l.split, 48000), total, 64);
+
+    // Sanity: the clip is heard on both sides of the split frame
+    const samples_t splitFrame = frameAt(l.splitSecs, 48000);
+    ASSERT_NE(whole[splitFrame - 1], 0.f);
+    ASSERT_NE(whole[splitFrame + 1], 0.f);
+
+    // A ends at round(T * rate) and B starts at the same frame, so the coverage agrees and nothing
+    // needs to be excepted: every frame, the split one included, must be equal.
+    //! The old code rounded start and offset separately: A used round(480.4992) - round(24.96) = 455,
+    //! B used round(832.4992) - round(376.9632) = 456 (offset 0.00052 + 0.0073334 = 0.0078534 s), the
+    //! unsplit clip 455. So B played one source frame ahead of the unsplit clip and this test failed.
+    //! Rounding start - offset once gives 456 for all three.
+    for (samples_t f = 0; f < total; ++f) {
+        ASSERT_EQ(split[f], whole[f]) << "frame " << f;
+    }
+}
+
+TEST(Audio_ClipAudioNodeTests, SplitClipPlaysLikeTheUnsplitOneWhenResampled)
+{
+    ClipAudioNode::Sources sources { { "a", makeSine(44100, 1000.0, 4410) } };
+    const SplitLists l = makeSplitLists();
+    const samples_t total = 1920;
+
+    const std::vector<float> whole = render(makeClipNode(sources, l.whole, 48000), total, 64);
+    const std::vector<float> split = render(makeClipNode(sources, l.split, 48000), total, 64);
+
+    // Neither half reaches the end of the source (0.1 s), so nothing rings out; A is not cut by B
+    // (it ends where B starts) and reads the whole source, so there is no tail limit to apply. Only
+    // the rounding of the position differs, far below 1e-6.
+    const samples_t splitFrame = frameAt(l.splitSecs, 48000);
+    ASSERT_GT(std::abs(whole[splitFrame + 5]), 0.f);
+    for (samples_t f = 0; f < total; ++f) {
+        if (f == splitFrame) {
+            continue; // the one frame of the join; checked below
+        }
+        ASSERT_NEAR(split[f], whole[f], 1e-6f) << "frame " << f;
+    }
+    ASSERT_NEAR(split[splitFrame], whole[splitFrame], 1e-6f);
+}
+
+TEST(Audio_ClipAudioNodeTests, ProcessAgainstSetClipsOnTwoThreads)
+{
+    ClipAudioNode::Sources sources { { "a", makeValues(48000, 6 * 48000, 1.f, 0.f) } };
+
+    AudioClip c1 = makeClip("a", 0.0, 3.0);
+    c1.gainDb = -6.f;
+    AudioClip c2 = makeClip("a", 0.001, 1.0);
+    c2.fadeIn = makeFade(0.01, AudioFadeCurve::Linear);
+    AudioClip c3 = makeClip("a", 0.002, 2.5);
+    c3.fadeOut = makeFade(0.1, AudioFadeCurve::EqualPower);
+    const std::vector<AudioClipList> lists { { c1 }, { c2, c3 }, {}, { c3, c1 } };
+
+    ClipAudioNodePtr node = makeClipNode(sources, lists[0], 48000);
+
+    std::atomic<bool> stop { false };
+    std::atomic<bool> bad { false };
+    std::thread processing([&]() {
+        std::vector<float> buf(64, 0.f);
+        while (!stop.load()) {
+            node->process(buf.data(), 64);
+            for (float v : buf) {
+                if (!std::isfinite(v)) {
+                    bad = true;
+                }
+            }
+        }
+    });
+
+    for (int i = 0; i < 4000; ++i) {
+        node->setClips(lists[i % lists.size()]);
+        if (i % 64 == 0) {
+            std::this_thread::yield();
+        }
+    }
+
+    stop = true;
+    processing.join();
+    EXPECT_FALSE(bad.load());
+
+    // The last list is the one that plays now
+    node->setClips({ makeClip("a", 0.0, 6.0) });
+    node->seek(TimePosition::zero(48000));
+    std::vector<float> buf(64, 0.f);
+    node->process(buf.data(), 64);
+    EXPECT_EQ(buf[0], 1.f);
+    EXPECT_EQ(buf[63], 1.f);
+    EXPECT_EQ(node->keptClipSets(), 1u);
 }

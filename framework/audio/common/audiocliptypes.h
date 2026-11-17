@@ -48,7 +48,8 @@ struct AudioFade {
     secs_t length = 0.0;
     AudioFadeCurve curve = AudioFadeCurve::Linear;
 
-    bool operator==(const AudioFade& o) const { return length == o.length && curve == o.curve; }
+    //! Exact: secs_t's own == is relative (number_t), which would hide a small move late on the timeline
+    bool operator==(const AudioFade& o) const { return length.raw() == o.length.raw() && curve == o.curve; }
 };
 
 //! One audio file of a clip track. Sources are fixed when the track is added: a clip list sent
@@ -81,8 +82,10 @@ struct AudioClip {
 
     bool operator==(const AudioClip& o) const
     {
-        return sourceKey == o.sourceKey && startSecs == o.startSecs && sourceOffsetSecs == o.sourceOffsetSecs
-               && lengthSecs == o.lengthSecs && gainDb == o.gainDb && fadeIn == o.fadeIn && fadeOut == o.fadeOut
+        //! Exact: secs_t's own == is relative (number_t), which would hide a small move late on the timeline
+        return sourceKey == o.sourceKey && startSecs.raw() == o.startSecs.raw()
+               && sourceOffsetSecs.raw() == o.sourceOffsetSecs.raw()
+               && lengthSecs.raw() == o.lengthSecs.raw() && gainDb == o.gainDb && fadeIn == o.fadeIn && fadeOut == o.fadeOut
                && muted == o.muted && stretchRatio == o.stretchRatio;
     }
 };
