@@ -875,10 +875,10 @@ void AudioContext::resetLoop()
     m_player->resetLoop();
 }
 
-void AudioContext::setMusicalTimeMap(const MusicalTimeMap& map)
+void AudioContext::setMusicalTimeMap(MusicalTimeMap map)
 {
     ONLY_AUDIO_ENGINE_THREAD;
-    m_player->setMusicalTimeMap(map);
+    m_player->setMusicalTimeMap(std::move(map));
 }
 
 PlaybackStatus AudioContext::playbackStatus() const

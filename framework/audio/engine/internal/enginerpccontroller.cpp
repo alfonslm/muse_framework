@@ -757,7 +757,7 @@ void EngineRpcController::init()
                 return make_response_ret(msg, make_ret(Err::InvalidRpcData));
             }
             if (auto actx = audioContext(msg.ctxId)) {
-                actx->setMusicalTimeMap(map);
+                actx->setMusicalTimeMap(std::move(map));
                 return make_response_ret(msg, make_ok());
             } else {
                 return make_response_ret(msg, make_ret(Err::InvalidContext));

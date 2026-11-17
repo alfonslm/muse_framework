@@ -33,6 +33,7 @@ struct MusicalPosition {
     double bpm = 0.0;               // quarter notes per minute
     int timeSigNumerator = 0;       // 0 if not known
     int timeSigDenominator = 0;
+    bool hasBar = false;            // barStartQuarters and the time signature come from the map's bars
 
     bool isValid() const { return bpm > 0.0; }
     bool hasTimeSig() const { return timeSigNumerator > 0 && timeSigDenominator > 0; }
@@ -41,6 +42,21 @@ struct MusicalPosition {
 //! The relation between playback time and musical position for one piece of music, as it is played back
 //! (repeats unrolled, playback speed applied). The audio engine itself only knows about time;
 //! this is what lets it tell plugins the tempo, the time signature and the beat they are at.
+//!
+//! What the application that builds it must keep to (the contract):
+//! - Quarter 0 is playback time 0, the start of the music. A pickup (anacrusis) is the first bar, with
+//!   its real, shorter length (a BarPoint with lengthQuarters), so the first full bar starts at the
+//!   pickup's length. This keeps plugins on the same grid as a MIDI export of the same music, whose
+//!   tick 0 is also the start of the music; neither negative positions nor a padded first bar can be
+//!   written to a MIDI file without moving the music in time.
+//! - Time is played time: repeats unrolled, the playback speed applied, pauses included.
+//! - A pause (caesura, breath) is two tempo points with the same quarters: the music stands still
+//!   while time runs on. The tempo reported during it is that of the point that starts it.
+//! - Gradual tempo changes are given as steps fine enough for the music (about one per beat).
+//! - Bars: a point at the start, at every time signature change, at every bar that is not as long as
+//!   its time signature says, and at the bar after each of those.
+//! - It is sent again whenever any of this changes (tempo, speed, repeats, the score's content).
+//! sanitize() is applied on arrival in the engine, so a careless map cannot break the lookups.
 struct MusicalTimeMap {
     //! The music is at `quarters` when the playback time is `secs`.
     //! Between two points the position moves evenly from one to the other, so two points with the same
@@ -74,6 +90,43 @@ struct MusicalTimeMap {
     std::vector<BarPoint> bars;     // sorted by quarters
 
     bool isValid() const { return !tempo.empty(); }
+
+    //! Keeps only usable points, in order: tempo points with finite secs and quarters and a positive,
+    //! finite bps, sorted by secs; bar points with finite quarters and a positive time signature,
+    //! sorted by quarters. Returns false if anything was dropped or reordered.
+    bool sanitize()
+    {
+        bool unchanged = true;
+
+        const auto badTempo = [](const TempoPoint& p) {
+            return !std::isfinite(p.secs) || !std::isfinite(p.quarters) || !std::isfinite(p.bps) || p.bps <= 0.0;
+        };
+        const size_t tempoBefore = tempo.size();
+        tempo.erase(std::remove_if(tempo.begin(), tempo.end(), badTempo), tempo.end());
+        unchanged = unchanged && tempo.size() == tempoBefore;
+
+        const auto bySecs = [](const TempoPoint& a, const TempoPoint& b) { return a.secs < b.secs; };
+        if (!std::is_sorted(tempo.begin(), tempo.end(), bySecs)) {
+            std::stable_sort(tempo.begin(), tempo.end(), bySecs);
+            unchanged = false;
+        }
+
+        const auto badBar = [](const BarPoint& b) {
+            return !std::isfinite(b.quarters) || !std::isfinite(b.lengthQuarters) || b.lengthQuarters < 0.0
+                   || b.numerator <= 0 || b.denominator <= 0;
+        };
+        const size_t barsBefore = bars.size();
+        bars.erase(std::remove_if(bars.begin(), bars.end(), badBar), bars.end());
+        unchanged = unchanged && bars.size() == barsBefore;
+
+        const auto byQuarters = [](const BarPoint& a, const BarPoint& b) { return a.quarters < b.quarters; };
+        if (!std::is_sorted(bars.begin(), bars.end(), byQuarters)) {
+            std::stable_sort(bars.begin(), bars.end(), byQuarters);
+            unchanged = false;
+        }
+
+        return unchanged;
+    }
 
     bool operator==(const MusicalTimeMap& o) const { return tempo == o.tempo && bars == o.bars; }
     bool operator!=(const MusicalTimeMap& o) const { return !operator==(o); }
@@ -113,6 +166,7 @@ struct MusicalTimeMap {
         });
         const BarPoint& bar = nextBar == bars.begin() ? bars.front() : *std::prev(nextBar);
 
+        result.hasBar = true;
         result.timeSigNumerator = bar.numerator;
         result.timeSigDenominator = bar.denominator;
 

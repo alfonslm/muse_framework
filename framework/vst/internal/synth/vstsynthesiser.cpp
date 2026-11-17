@@ -62,6 +62,8 @@ void VstSynthesiser::init(const OutputSpec& spec)
 
     m_outputSpec = spec;
 
+    m_volumeGainChanges.reserve(64);
+
     m_pluginPtr = instancesRegister()->makeAndRegisterInstrPlugin(m_params.resourceMeta.id, m_trackId);
 
     m_vstAudioClient->init(PluginType::Instrument, m_pluginPtr);
@@ -245,7 +247,9 @@ samples_t VstSynthesiser::process(float* buffer, samples_t samplesPerChannel)
     samples_t segmentStart = 0;
     samples_t sampleOffset = 0;
     samples_t processedSamples = 0;
-    VstAudioClient::VolumeGainChanges volumeGainChanges;
+    //! A member, cleared per block: during a hairpin there is a gain change in most blocks
+    VstAudioClient::VolumeGainChanges& volumeGainChanges = m_volumeGainChanges;
+    volumeGainChanges.clear();
 
     auto processSegment = [&](samples_t segmentEnd) {
         if (segmentEnd > segmentStart) {

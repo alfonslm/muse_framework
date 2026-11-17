@@ -85,6 +85,8 @@ private:
 
     audio::TimePosition m_currentPosition;
     audio::engine::PlayheadPositionPtr m_playheadPosition = nullptr;
+
+    VstAudioClient::VolumeGainChanges m_volumeGainChanges;
 };
 
 using VstSynthPtr = std::shared_ptr<VstSynthesiser>;
