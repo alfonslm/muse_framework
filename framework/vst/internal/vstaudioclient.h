@@ -132,6 +132,7 @@ private:
         std::string name;
         bool firstAfterActivation = true;
         audio::samples_t expectedPosition = 0;
+        audio::samples_t lastPosition = 0;
         bool wasPlaying = false;
         audio::samples_t samplesSinceReport = 0;
         int callsSinceReport = 0;

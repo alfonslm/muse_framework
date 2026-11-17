@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -35,12 +37,26 @@
 //! never allocates or blocks, and drops the line (counting it) when the queue is full. A
 //! background thread, running only while tracing is on, writes the queued lines to the log.
 namespace muse::vst::trace {
-bool isEnabled();
+namespace detail {
+extern std::atomic<bool> s_enabled;
+}
+
+//! One relaxed flag read: cheap enough for the audio thread. Guard every log() call with it, so that
+//! the arguments (names, flags as text) are not built while tracing is off.
+inline bool isEnabled()
+{
+    return detail::s_enabled.load(std::memory_order_relaxed);
+}
 
 //! Normally set from the environment at start; for tests
 void setEnabled(bool enabled);
 
-//! Start and stop the writer thread. Main thread, module init and deinit.
+//! Build the line queue. Main thread, before any audio thread logs; start() calls it.
+//! Until it exists, log() drops lines.
+void initQueue();
+
+//! Start and stop the writer thread. Main thread, module init and deinit. A writer still running at
+//! program exit is stopped there without writing what is left.
 void start();
 void stop();
 
@@ -64,6 +80,8 @@ std::string loadingPlugin();
 //! Readable names for what crosses the interface
 std::string iidName(const Steinberg::TUID iid);
 std::string processContextStateToString(uint32_t state);
+//! The same into a fixed buffer, for the audio thread; returns `buffer`
+const char* formatProcessContextState(uint32_t state, char* buffer, size_t size);
 std::string processContextRequirementsToString(uint32_t flags);
 std::string restartFlagsToString(int32_t flags);
 }

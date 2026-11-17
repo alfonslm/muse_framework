@@ -21,6 +21,7 @@
 
 #include "vsttrace.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -146,11 +147,7 @@ private:
     alignas(64) std::atomic<size_t> m_dequeuePos { 0 };
 };
 
-LineQueue& queue()
-{
-    static LineQueue s_queue;
-    return s_queue;
-}
+std::atomic<LineQueue*> s_queue { nullptr };
 
 std::atomic<size_t> s_dropped { 0 };
 
@@ -160,14 +157,25 @@ bool enabledFromEnvironment()
     return value && std::strcmp(value, "1") == 0;
 }
 
-std::atomic<bool>& enabledFlag()
-{
-    static std::atomic<bool> s_enabled { enabledFromEnvironment() };
-    return s_enabled;
-}
-
-std::thread s_writer;
 std::atomic<bool> s_writerRunning { false };
+std::atomic<bool> s_exiting { false };
+
+//! Holds the writer thread. If the program exits without stop() (an exit path that skips the module's
+//! deinit), the destructor stops the thread instead of letting std::thread's destructor terminate.
+struct Writer {
+    std::thread thread;
+
+    ~Writer()
+    {
+        if (thread.joinable()) {
+            s_exiting.store(true, std::memory_order_release);
+            s_writerRunning.store(false, std::memory_order_release);
+            thread.join();
+        }
+    }
+};
+
+Writer s_writer;
 
 std::mutex s_loadingPluginMutex;
 std::string s_loadingPlugin;
@@ -184,7 +192,11 @@ void writerLoop()
         muse::vst::trace::drainTo(&writeToLog, nullptr);
         std::this_thread::sleep_for(100ms);
     }
-    muse::vst::trace::drainTo(&writeToLog, nullptr);
+
+    //! At a normal stop the rest is written; at program exit the logger may be gone already
+    if (!s_exiting.load(std::memory_order_acquire)) {
+        muse::vst::trace::drainTo(&writeToLog, nullptr);
+    }
 }
 
 std::string joinFlags(uint32_t value, std::initializer_list<std::pair<uint32_t, const char*> > names)
@@ -216,14 +228,19 @@ std::string joinFlags(uint32_t value, std::initializer_list<std::pair<uint32_t, 
 }
 
 namespace muse::vst::trace {
-bool isEnabled()
-{
-    return enabledFlag().load(std::memory_order_relaxed);
-}
+std::atomic<bool> detail::s_enabled { enabledFromEnvironment() };
 
 void setEnabled(bool enabled)
 {
-    enabledFlag().store(enabled, std::memory_order_relaxed);
+    detail::s_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+void initQueue()
+{
+    if (!s_queue.load(std::memory_order_acquire)) {
+        //! Lives until the program ends: audio threads may still hold it
+        s_queue.store(new LineQueue(), std::memory_order_release);
+    }
 }
 
 void start()
@@ -232,9 +249,11 @@ void start()
         return;
     }
 
+    initQueue();
+
     LOGI() << "[vst-trace] VST host trace is on (MUSE_VST_TRACE=1)";
     s_writerRunning.store(true, std::memory_order_release);
-    s_writer = std::thread(&writerLoop);
+    s_writer.thread = std::thread(&writerLoop);
 }
 
 void stop()
@@ -244,8 +263,8 @@ void stop()
     }
 
     s_writerRunning.store(false, std::memory_order_release);
-    if (s_writer.joinable()) {
-        s_writer.join();
+    if (s_writer.thread.joinable()) {
+        s_writer.thread.join();
     }
 
     const size_t dropped = s_dropped.exchange(0);
@@ -266,14 +285,16 @@ void log(const char* format, ...)
     std::vsnprintf(line, sizeof(line), format, args);
     va_end(args);
 
-    if (!queue().push(line)) {
+    LineQueue* queue = s_queue.load(std::memory_order_acquire);
+    if (!queue || !queue->push(line)) {
         s_dropped.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
 size_t pendingCount()
 {
-    return queue().size();
+    LineQueue* queue = s_queue.load(std::memory_order_acquire);
+    return queue ? queue->size() : 0;
 }
 
 size_t droppedCount()
@@ -283,9 +304,14 @@ size_t droppedCount()
 
 size_t drainTo(void (*sink)(const char* line, void* ctx), void* ctx)
 {
+    LineQueue* queue = s_queue.load(std::memory_order_acquire);
+    if (!queue) {
+        return 0;
+    }
+
     char line[LINE_SIZE];
     size_t count = 0;
-    while (queue().pop(line)) {
+    while (queue->pop(line)) {
         if (sink) {
             sink(line, ctx);
         }
@@ -371,9 +397,8 @@ std::string iidName(const TUID iid)
     return std::string("unknown ") + hex;
 }
 
-std::string processContextStateToString(uint32_t state)
-{
-    return joinFlags(state, {
+namespace {
+const std::initializer_list<std::pair<uint32_t, const char*> > PROCESS_CONTEXT_STATE_NAMES = {
         { ProcessContext::kPlaying, "playing" },
         { ProcessContext::kCycleActive, "cycleActive" },
         { ProcessContext::kRecording, "recording" },
@@ -387,7 +412,48 @@ std::string processContextStateToString(uint32_t state)
         { ProcessContext::kChordValid, "chord" },
         { ProcessContext::kSmpteValid, "smpte" },
         { ProcessContext::kClockValid, "clock" },
-    });
+};
+}
+
+std::string processContextStateToString(uint32_t state)
+{
+    return joinFlags(state, PROCESS_CONTEXT_STATE_NAMES);
+}
+
+const char* formatProcessContextState(uint32_t state, char* buffer, size_t size)
+{
+    if (!buffer || size == 0) {
+        return buffer;
+    }
+
+    size_t len = 0;
+    buffer[0] = '\0';
+    uint32_t known = 0;
+    auto append = [&](const char* text) {
+        const int n = std::snprintf(buffer + len, size - len, "%s%s", len > 0 ? "|" : "", text);
+        if (n > 0) {
+            len = std::min(size - 1, len + static_cast<size_t>(n));
+        }
+    };
+
+    for (const auto& [bit, name] : PROCESS_CONTEXT_STATE_NAMES) {
+        known |= bit;
+        if (state & bit) {
+            append(name);
+        }
+    }
+
+    if (const uint32_t unknown = state & ~known) {
+        char hex[16];
+        std::snprintf(hex, sizeof(hex), "0x%x", unknown);
+        append(hex);
+    }
+
+    if (len == 0) {
+        std::snprintf(buffer, size, "-");
+    }
+
+    return buffer;
 }
 
 std::string processContextRequirementsToString(uint32_t flags)

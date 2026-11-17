@@ -501,7 +501,9 @@ void VstAudioClient::updateProcessSetup()
     setup.sampleRate = m_outputSpec.sampleRate;
 
     if (processor->setupProcessing(setup) != Steinberg::kResultOk) {
-        trace::log("%s: setupProcessing failed", m_trace.name.c_str());
+        if (trace::isEnabled()) {
+            trace::log("%s: setupProcessing failed", m_trace.name.c_str());
+        }
         return;
     }
 
@@ -647,8 +649,10 @@ void VstAudioClient::ensureActivity()
     m_isActive = true;
 
     m_trace.firstAfterActivation = true;
-    trace::log("%s: setActive(true), setProcessing(true) at %lld", m_trace.name.c_str(),
-               static_cast<long long>(m_processContext.projectTimeSamples));
+    if (trace::isEnabled()) {
+        trace::log("%s: setActive(true), setProcessing(true) at %lld", m_trace.name.c_str(),
+                   static_cast<long long>(m_processContext.projectTimeSamples));
+    }
 }
 
 void VstAudioClient::disableActivity()
@@ -677,8 +681,10 @@ void VstAudioClient::disableActivity()
 
     m_isActive = false;
 
-    trace::log("%s: setProcessing(false), setActive(false) at %lld", m_trace.name.c_str(),
-               static_cast<long long>(m_processContext.projectTimeSamples));
+    if (trace::isEnabled()) {
+        trace::log("%s: setProcessing(false), setActive(false) at %lld", m_trace.name.c_str(),
+                   static_cast<long long>(m_processContext.projectTimeSamples));
+    }
 }
 
 void VstAudioClient::flushBuffers()
@@ -774,10 +780,11 @@ void VstAudioClient::traceProcessContext(const char* reason)
         append(" sys=%lld", static_cast<long long>(c.systemTime));
     }
 
+    char state[128];
     trace::log("%s: %s: pos=%lld (%.3f s) state=%s%s", m_trace.name.c_str(), reason,
                static_cast<long long>(c.projectTimeSamples),
                c.sampleRate > 0 ? static_cast<double>(c.projectTimeSamples) / c.sampleRate : 0.0,
-               trace::processContextStateToString(c.state).c_str(), musical);
+               trace::formatProcessContextState(c.state, state, sizeof(state)), musical);
 }
 
 void VstAudioClient::traceBeforeProcess(samples_t samplesPerChannel)
@@ -785,13 +792,16 @@ void VstAudioClient::traceBeforeProcess(samples_t samplesPerChannel)
     const bool playing = (m_processContext.state & VstProcessContext::kPlaying) != 0;
     const samples_t position = static_cast<samples_t>(m_processContext.projectTimeSamples);
 
+    //! While playing the position should run on from the last block; while stopped it should stay
+    const samples_t expectedPosition = m_trace.wasPlaying ? m_trace.expectedPosition : m_trace.lastPosition;
+
     const char* reason = nullptr;
     if (m_trace.firstAfterActivation) {
         reason = "first block after activation";
     } else if (playing != m_trace.wasPlaying) {
         reason = playing ? "transport starts" : "transport stops";
-    } else if (position != m_trace.expectedPosition) {
-        reason = "position jumps";
+    } else if (position != expectedPosition) {
+        reason = playing ? "position jumps" : "position moves while stopped";
     }
 
     if (reason) {
@@ -805,6 +815,7 @@ void VstAudioClient::traceBeforeProcess(samples_t samplesPerChannel)
 
     m_trace.firstAfterActivation = false;
     m_trace.wasPlaying = playing;
+    m_trace.lastPosition = position;
     m_trace.expectedPosition = position + samplesPerChannel;
 
     ++m_trace.callsSinceReport;
