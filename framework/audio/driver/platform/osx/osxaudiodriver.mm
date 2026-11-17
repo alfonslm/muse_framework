@@ -52,7 +52,7 @@ struct OSXAudioDriver::Data {
 
 //! NOTE The latency of the device after it has taken the samples, in frames.
 //! With the safety offset if asked (the time stamps of an IOProc already include it)
-static UInt32 deviceOutputLatencyFrames(AudioDeviceID deviceId, bool withSafetyOffset)
+static UInt32 deviceOutputLatencyFrames(OSXAudioDeviceID deviceId, bool withSafetyOffset)
 {
     auto uint32Property = [](AudioObjectID objectId, AudioObjectPropertySelector selector, AudioObjectPropertyScope scope) -> UInt32 {
         AudioObjectPropertyAddress address = {
