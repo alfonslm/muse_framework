@@ -132,9 +132,14 @@ void VstPluginInstance::load()
     Async::call(this, [this]() {
         ONLY_MAIN_THREAD(threadSecurer);
 
-        trace::setLoadingPlugin(m_resourceId);
+        const bool traced = trace::isEnabled();
+        if (traced) {
+            trace::setLoadingPlugin(m_resourceId);
+        }
         DEFER {
-            trace::setLoadingPlugin(std::string());
+            if (traced) {
+                trace::setLoadingPlugin(std::string());
+            }
         };
 
         m_componentHandlerPtr->setTraceName(m_resourceId);

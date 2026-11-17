@@ -22,7 +22,9 @@
 #include "vsthostcontext.h"
 
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstpluginterfacesupport.h"
+#include "pluginterfaces/vst/ivstunits.h"
 #include "public.sdk/source/vst/hosting/pluginterfacesupport.h"
 
 #include "vsttrace.h"
@@ -61,8 +63,10 @@ public:
     tresult PLUGIN_API isPlugInterfaceSupported(const TUID iid) override
     {
         const tresult result = m_inner ? m_inner->isPlugInterfaceSupported(iid) : kResultFalse;
-        trace::log("%s asks whether the host supports %s: %s", plugin().c_str(), trace::iidName(iid).c_str(),
-                   result == kResultTrue ? "yes" : "no");
+        if (trace::isEnabled()) {
+            trace::log("%s asks whether the host supports %s: %s", plugin().c_str(), trace::iidName(iid).c_str(),
+                       result == kResultTrue ? "yes" : "no");
+        }
         return result;
     }
 
@@ -77,8 +81,15 @@ IMPLEMENT_FUNKNOWN_METHODS(TracingPlugInterfaceSupport, IPlugInterfaceSupport, I
 
 VstHostContext::VstHostContext()
 {
-    //! VstAudioClient asks plugins for their process context requirements after setupProcessing
+    //! The SDK's default list also names interfaces this host never calls; a plugin may rely on
+    //! a "yes", so they are taken out
     if (PlugInterfaceSupport* support = getPlugInterfaceSupport()) {
+        support->removePlugInterfaceSupported(IUnitInfo::iid);
+        support->removePlugInterfaceSupported(IUnitData::iid);
+        support->removePlugInterfaceSupported(IProgramListData::iid);
+        support->removePlugInterfaceSupported(IEditController2::iid);
+
+        //! VstPluginInstance asks plugins for their process context requirements when they are loaded
         support->addPlugInterfaceSupported(IProcessContextRequirements::iid);
     }
 }
@@ -104,7 +115,9 @@ tresult PLUGIN_API VstHostContext::queryInterface(const TUID iid, void** obj)
         result = HostApplication::queryInterface(iid, obj);
     }
 
-    trace::log("%s asks the host context for %s: %s", plugin().c_str(), trace::iidName(iid).c_str(), answerName(result));
+    if (trace::isEnabled()) {
+        trace::log("%s asks the host context for %s: %s", plugin().c_str(), trace::iidName(iid).c_str(), answerName(result));
+    }
 
     return result;
 }
@@ -112,7 +125,9 @@ tresult PLUGIN_API VstHostContext::queryInterface(const TUID iid, void** obj)
 tresult PLUGIN_API VstHostContext::createInstance(TUID cid, TUID iid, void** obj)
 {
     const tresult result = HostApplication::createInstance(cid, iid, obj);
-    trace::log("%s asks the host to create %s (as %s): %s", plugin().c_str(), trace::iidName(cid).c_str(),
-               trace::iidName(iid).c_str(), answerName(result));
+    if (trace::isEnabled()) {
+        trace::log("%s asks the host to create %s (as %s): %s", plugin().c_str(), trace::iidName(cid).c_str(),
+                   trace::iidName(iid).c_str(), answerName(result));
+    }
     return result;
 }

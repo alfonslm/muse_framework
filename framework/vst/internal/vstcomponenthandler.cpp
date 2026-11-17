@@ -44,7 +44,9 @@ IMPLEMENT_REFCOUNT(VstComponentHandler)
         return m_systemTimeHandler->queryInterface(_iid, obj);
     }
 
-    trace::log("%s asks the component handler for %s: no", m_traceName.c_str(), trace::iidName(_iid).c_str());
+    if (trace::isEnabled()) {
+        trace::log("%s asks the component handler for %s: no", m_traceName.c_str(), trace::iidName(_iid).c_str());
+    }
 
     *obj = nullptr;
     return ::Steinberg::kNoInterface;
@@ -114,8 +116,10 @@ Steinberg::tresult VstComponentHandler::endEdit(Steinberg::Vst::ParamID /*id*/)
 
 Steinberg::tresult VstComponentHandler::restartComponent(Steinberg::int32 flags)
 {
-    trace::log("%s asks the host to restart the component: %s (ignored)", m_traceName.c_str(),
-               trace::restartFlagsToString(flags).c_str());
+    if (trace::isEnabled()) {
+        trace::log("%s asks the host to restart the component: %s (ignored)", m_traceName.c_str(),
+                   trace::restartFlagsToString(flags).c_str());
+    }
 
     return Steinberg::kResultOk;
 }
