@@ -23,6 +23,8 @@
 #define MUSE_VST_VSTCOMPONENTHANDLER_H
 
 #include <atomic>
+#include <chrono>
+#include <string>
 
 #include "async/notification.h"
 #include "async/channel.h"
@@ -64,6 +66,9 @@ public:
     // to avoid triggering a rescan of the state we are currently writing
     void setSuppressNotify(bool suppress);
 
+    //! The plugin's name in VST trace lines (vsttrace.h)
+    void setTraceName(const std::string& name);
+
 private:
     Steinberg::tresult beginEdit(Steinberg::Vst::ParamID id) override;
     Steinberg::tresult performEdit(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue valueNormalized) override;
@@ -74,6 +79,10 @@ private:
     async::Notification m_paramsChangedNotify;
 
     Steinberg::FUnknownPtr<VstAdvancedHandler> m_advancedHandler = nullptr;
+
+    std::string m_traceName;
+    int m_traceEditCount = 0;
+    std::chrono::steady_clock::time_point m_traceEditWindowStart;
 };
 }
 

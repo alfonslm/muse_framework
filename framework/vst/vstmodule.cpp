@@ -44,6 +44,7 @@
 #include "internal/vstcommandsstate.h"
 #include "internal/vstuiactions.h"
 #include "internal/synth/keyswitchmapregistry.h"
+#include "internal/vsttrace.h"
 
 using namespace muse::vst;
 using namespace muse::modularity;
@@ -100,6 +101,8 @@ void VSTModule::resolveImports()
 
 void VSTModule::onInit(const IApplication::RunMode& mode)
 {
+    trace::start();
+
     m_configuration->init();
     m_pluginModulesRepo->init();
 
@@ -111,6 +114,8 @@ void VSTModule::onInit(const IApplication::RunMode& mode)
 void VSTModule::onDeinit()
 {
     m_pluginModulesRepo->deInit();
+
+    trace::stop();
 }
 
 muse::modularity::IContextSetup* VSTModule::newContext(const muse::modularity::ContextPtr& ctx) const

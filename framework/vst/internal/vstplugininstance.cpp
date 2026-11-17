@@ -24,6 +24,7 @@
 
 #include "modularity/ioc.h"
 #include "vstpluginprovider.h"
+#include "vsttrace.h"
 
 #include "async/async.h"
 
@@ -123,6 +124,18 @@ void VstPluginInstance::load()
 {
     Async::call(this, [this]() {
         ONLY_MAIN_THREAD(threadSecurer);
+
+        const bool traced = trace::isEnabled();
+        if (traced) {
+            trace::setLoadingPlugin(m_resourceId);
+        }
+        DEFER {
+            if (traced) {
+                trace::setLoadingPlugin(std::string());
+            }
+        };
+
+        m_componentHandlerPtr->setTraceName(m_resourceId);
 
         m_module = modulesRepo()->pluginModule(m_resourceId);
         if (!m_module) {
