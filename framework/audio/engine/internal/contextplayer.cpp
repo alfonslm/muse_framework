@@ -153,6 +153,13 @@ MusicalPosition ContextPlayer::musicalPosition(const TimePosition& position) con
     return m_musicalTimeMap.positionAt(position.time().raw());
 }
 
+IPlayheadPosition::Loop ContextPlayer::loop() const
+{
+    //! NOTE Read by the processing thread, like in proc_onTimeChanged(); written by setLoop() and resetLoop()
+    //! while processing is held (ONLY_ON_OPERATION_EXEC)
+    return Loop { m_timeLoopStart.raw(), m_timeLoopEnd.raw() };
+}
+
 void ContextPlayer::onTimeEvent(const TimeEvent event)
 {
     ONLY_AUDIO_ENGINE_THREAD;

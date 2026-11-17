@@ -21,7 +21,9 @@
 
 #include "vsthostcontext.h"
 
+#include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstpluginterfacesupport.h"
+#include "public.sdk/source/vst/hosting/pluginterfacesupport.h"
 
 #include "vsttrace.h"
 
@@ -71,6 +73,14 @@ private:
 };
 
 IMPLEMENT_FUNKNOWN_METHODS(TracingPlugInterfaceSupport, IPlugInterfaceSupport, IPlugInterfaceSupport::iid)
+}
+
+VstHostContext::VstHostContext()
+{
+    //! VstAudioClient asks plugins for their process context requirements after setupProcessing
+    if (PlugInterfaceSupport* support = getPlugInterfaceSupport()) {
+        support->addPlugInterfaceSupported(IProcessContextRequirements::iid);
+    }
 }
 
 tresult PLUGIN_API VstHostContext::queryInterface(const TUID iid, void** obj)

@@ -36,6 +36,16 @@ public:
 
     //! Where the music is at the given time. Not valid if the tempo of the music is not known.
     virtual MusicalPosition musicalPosition(const TimePosition& position) const = 0;
+
+    //! The playback loop, from `from` up to `to`, in seconds; not valid if no loop is set
+    struct Loop {
+        double from = 0.0;
+        double to = 0.0;
+
+        bool isValid() const { return from < to; }
+    };
+
+    virtual Loop loop() const { return Loop(); }
 };
 
 class IPlayhead : public IPlayheadPosition

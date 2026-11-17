@@ -50,6 +50,8 @@ target_sources(muse_vst PRIVATE
     internal/vstconfiguration.h
     internal/vstplugininstance.cpp
     internal/vstplugininstance.h
+    internal/vstprocesscontext.cpp
+    internal/vstprocesscontext.h
     internal/vstcomponenthandler.cpp
     internal/vstcomponenthandler.h
     internal/vsthostcontext.cpp

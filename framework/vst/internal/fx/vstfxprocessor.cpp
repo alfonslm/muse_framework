@@ -22,6 +22,8 @@
 
 #include "vstfxprocessor.h"
 
+#include "../vstprocesscontext.h"
+
 using namespace muse;
 using namespace muse::vst;
 using namespace muse::audio;
@@ -138,6 +140,14 @@ void VstFxProcessor::process(float* buffer, samples_t sampleCount, samples_t pla
         if (position.isValid()) {
             musicalPosition = m_playheadPosition->musicalPosition(position);
         }
+    }
+
+    double loopStart = 0.0;
+    double loopEnd = 0.0;
+    if (m_playheadPosition && loopInQuarters(*m_playheadPosition, m_outputSpec.sampleRate, loopStart, loopEnd)) {
+        m_vstAudioClient->setCycle(loopStart, loopEnd);
+    } else {
+        m_vstAudioClient->clearCycle();
     }
 
     m_vstAudioClient->process(buffer, sampleCount, playbackPositionSamples, musicalPosition);

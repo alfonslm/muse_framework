@@ -71,6 +71,7 @@ public:
     void forward(const TimePosition& delta) override;
     const TimePosition& currentPosition() const override;
     MusicalPosition musicalPosition(const TimePosition& position) const override;
+    Loop loop() const override;
 
 private:
 

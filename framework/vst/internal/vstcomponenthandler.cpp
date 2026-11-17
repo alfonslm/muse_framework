@@ -21,6 +21,7 @@
  */
 #include "vstcomponenthandler.h"
 
+#include "vstprocesscontext.h"
 #include "vsttrace.h"
 
 using namespace muse::vst;
@@ -39,6 +40,10 @@ IMPLEMENT_REFCOUNT(VstComponentHandler)
         return m_advancedHandler->queryInterface(_iid, obj);
     }
 
+    if (::Steinberg::FUnknownPrivate::iidEqual(_iid, Steinberg::Vst::IComponentHandlerSystemTime::iid)) {
+        return m_systemTimeHandler->queryInterface(_iid, obj);
+    }
+
     trace::log("%s asks the component handler for %s: no", m_traceName.c_str(), trace::iidName(_iid).c_str());
 
     *obj = nullptr;
@@ -46,7 +51,7 @@ IMPLEMENT_REFCOUNT(VstComponentHandler)
 }
 
 VstComponentHandler::VstComponentHandler()
-    : m_advancedHandler(new VstAdvancedHandler(m_paramsChangedNotify))
+    : m_advancedHandler(new VstAdvancedHandler(m_paramsChangedNotify)), m_systemTimeHandler(Steinberg::owned(new VstSystemTimeHandler()))
 {
 }
 
@@ -155,5 +160,19 @@ Steinberg::tresult VstAdvancedHandler::finishGroupEdit()
         m_paramsChanged.notify();
     }
 
+    return Steinberg::kResultOk;
+}
+
+IMPLEMENT_FUNKNOWN_METHODS(VstSystemTimeHandler, Steinberg::Vst::IComponentHandlerSystemTime,
+                           Steinberg::Vst::IComponentHandlerSystemTime::iid)
+
+VstSystemTimeHandler::VstSystemTimeHandler()
+{
+    FUNKNOWN_CTOR
+}
+
+Steinberg::tresult PLUGIN_API VstSystemTimeHandler::getSystemTime(Steinberg::int64& systemTime)
+{
+    systemTime = vstSystemTimeNs();
     return Steinberg::kResultOk;
 }

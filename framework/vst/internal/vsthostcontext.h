@@ -28,9 +28,12 @@ namespace muse::vst {
 //! It behaves exactly like the SDK's HostApplication; with the VST trace on (vsttrace.h) it also
 //! logs which interfaces plugins ask it for, which objects they create through it, and which
 //! optional host interfaces they ask about through IPlugInterfaceSupport.
+//! Besides the SDK's minimum set, it tells plugins that it uses IProcessContextRequirements.
 class VstHostContext : public Steinberg::Vst::HostApplication
 {
 public:
+    VstHostContext();
+
     Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid, void** obj) override;
     Steinberg::tresult PLUGIN_API createInstance(Steinberg::TUID cid, Steinberg::TUID iid, void** obj) override;
 };

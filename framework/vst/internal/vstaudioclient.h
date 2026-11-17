@@ -69,6 +69,10 @@ public:
                              const audio::MusicalPosition& musicalPosition = audio::MusicalPosition(),
                              const VolumeGainChanges& volumeGainChanges = VolumeGainChanges());
 
+    //! The playback loop in quarter notes, told to the plugin as its cycle; cleared when there is none
+    void setCycle(double startQuarters, double endQuarters);
+    void clearCycle();
+
     ParamsMapping paramsMapping(const std::set<Steinberg::Vst::CtrlNumber>& controllers) const;
 
 private:
@@ -77,6 +81,7 @@ private:
 
     void setUpProcessData();
     void updateProcessContext(audio::samples_t playbackPositionSamples, const audio::MusicalPosition& musicalPosition);
+    void updateProcessContextRequirements();
     void updateProcessSetup();
     void extractInputSamples(muse::audio::samples_t sampleCount, const float* sourceBuffer);
 
@@ -127,6 +132,15 @@ private:
     audio::OutputSpec m_outputSpec;
 
     midiremote::IMMCDecoderPtr m_mmcDecoder;
+
+    bool m_hasCycle = false;
+    double m_cycleStartQuarters = 0.0;
+    double m_cycleEndQuarters = 0.0;
+    int64_t m_continuousSamples = 0;
+
+    //! What the plugin says it needs from the process context (IProcessContextRequirements); 0 if it does not say
+    uint32_t m_processContextRequirements = 0;
+    bool m_knowsProcessContextRequirements = false;
 
     struct TraceState {
         std::string name;

@@ -27,6 +27,7 @@
 
 #include "global/defer.h"
 
+#include "vstprocesscontext.h"
 #include "vsttrace.h"
 
 #include "log.h"
@@ -310,6 +311,7 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
     }
 
     m_needUpdateState = false;
+    m_continuousSamples += samplesPerChannel;
 
     if (trace::isEnabled()) {
         traceAfterProcess(samplesPerChannel);
@@ -377,30 +379,37 @@ PluginComponentPtr VstAudioClient::pluginComponent() const
 
 void VstAudioClient::updateProcessContext(samples_t playbackPositionSamples, const MusicalPosition& musicalPosition)
 {
-    using Context = VstProcessContext;
+    VstTransportInfo info;
+    info.positionSamples = static_cast<int64_t>(playbackPositionSamples);
+    info.musical = musicalPosition;
+    info.hasCycle = m_hasCycle;
+    info.cycleStartQuarters = m_cycleStartQuarters;
+    info.cycleEndQuarters = m_cycleEndQuarters;
+    info.continuousSamples = m_continuousSamples;
+    info.systemTimeNs = vstSystemTimeNs();
 
-    static constexpr uint32_t MUSICAL_FLAGS = Context::kTempoValid | Context::kProjectTimeMusicValid
-                                              | Context::kBarPositionValid | Context::kTimeSigValid;
+    fillProcessContext(m_processContext, info);
+}
 
-    m_processContext.projectTimeSamples = playbackPositionSamples;
-    m_processContext.state &= ~MUSICAL_FLAGS;
+void VstAudioClient::setCycle(double startQuarters, double endQuarters)
+{
+    m_hasCycle = true;
+    m_cycleStartQuarters = startQuarters;
+    m_cycleEndQuarters = endQuarters;
+}
 
-    //! NOTE Without these a plugin that follows the host transport (a sequencer, an arpeggiator, a tempo-synced delay...)
-    //! does not know the tempo, nor which bar and beat it is at
-    if (!musicalPosition.isValid()) {
-        return;
-    }
+void VstAudioClient::clearCycle()
+{
+    m_hasCycle = false;
+}
 
-    m_processContext.tempo = musicalPosition.bpm;
-    m_processContext.projectTimeMusic = musicalPosition.quarters;
-    m_processContext.barPositionMusic = musicalPosition.barStartQuarters;
-    m_processContext.state |= Context::kTempoValid | Context::kProjectTimeMusicValid | Context::kBarPositionValid;
+void VstAudioClient::updateProcessContextRequirements()
+{
+    IAudioProcessorPtr processor = pluginProcessor();
+    Steinberg::FUnknownPtr<Steinberg::Vst::IProcessContextRequirements> requirements(processor);
 
-    if (musicalPosition.hasTimeSig()) {
-        m_processContext.timeSigNumerator = musicalPosition.timeSigNumerator;
-        m_processContext.timeSigDenominator = musicalPosition.timeSigDenominator;
-        m_processContext.state |= Context::kTimeSigValid;
-    }
+    m_knowsProcessContextRequirements = requirements;
+    m_processContextRequirements = requirements ? requirements->getProcessContextRequirements() : 0;
 }
 
 void VstAudioClient::setUpProcessData()
@@ -499,6 +508,9 @@ void VstAudioClient::updateProcessSetup()
         trace::log("%s: setupProcessing failed", m_trace.name.c_str());
         return;
     }
+
+    //! NOTE The host says it supports IProcessContextRequirements (VstHostContext), so it asks
+    updateProcessContextRequirements();
 
     if (trace::isEnabled()) {
         traceProcessSetup(setup);
@@ -715,17 +727,16 @@ void VstAudioClient::traceProcessSetup(const VstProcessSetup& setup)
         return;
     }
 
-    //! NOTE The SDK asks for these on the UI thread once setup is done; hosts commonly ask
+    //! NOTE The SDK asks for latency and tail on the UI thread once setup is done; hosts commonly ask
     //! from wherever they set up processing, as here. Only done while tracing.
     trace::log("%s: setupProcessing %s, block up to %d samples, %.0f Hz; latency %u samples, tail %u samples",
                m_trace.name.c_str(), setup.processMode == VstProcessMode::kOffline ? "offline" : "realtime",
                static_cast<int>(setup.maxSamplesPerBlock), setup.sampleRate,
                static_cast<unsigned>(processor->getLatencySamples()), static_cast<unsigned>(processor->getTailSamples()));
 
-    Steinberg::FUnknownPtr<Steinberg::Vst::IProcessContextRequirements> requirements(processor);
-    if (requirements) {
+    if (m_knowsProcessContextRequirements) {
         trace::log("%s: process context requirements: %s", m_trace.name.c_str(),
-                   trace::processContextRequirementsToString(requirements->getProcessContextRequirements()).c_str());
+                   trace::processContextRequirementsToString(m_processContextRequirements).c_str());
     } else {
         trace::log("%s: does not say which process context fields it needs (no IProcessContextRequirements)",
                    m_trace.name.c_str());
