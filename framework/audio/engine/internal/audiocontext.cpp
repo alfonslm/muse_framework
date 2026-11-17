@@ -34,8 +34,8 @@
 #include "nodes/audiosourcenode.h"
 #include "nodes/signalnode.h"
 #include "nodes/automationcontrolnode.h"
-#include "nodes/fileaudionode.h"
-#include "codecs/wavdecoder.h"
+#include "nodes/clipaudionode.h"
+#include "codecs/audiodecoder.h"
 
 #include "contextplayer.h"
 
@@ -155,6 +155,31 @@ TrackId AudioContext::newTrackId() const
     return lastId;
 }
 
+namespace {
+//! Reads and decodes a whole device. The device is not used after this returns.
+RetVal<codec::PcmAudio> decodeDevice(io::IODevice* device)
+{
+    if (!device) {
+        return RetVal<codec::PcmAudio>::make_ret(Err::InvalidAudioFilePath);
+    }
+
+    if (!device->isOpen() && !device->open(io::IODevice::ReadOnly)) {
+        return RetVal<codec::PcmAudio>::make_ret(Err::InvalidAudioFilePath);
+    }
+
+    if (!device->seek(0)) {
+        return RetVal<codec::PcmAudio>::make_ret(Err::InvalidAudioFilePath);
+    }
+
+    RetVal<codec::IAudioDecoderPtr> decoder = codec::makeDecoder(device->readData(), device->size());
+    if (!decoder.ret) {
+        return RetVal<codec::PcmAudio>::make_ret(decoder.ret);
+    }
+
+    return codec::decodeAll(*decoder.val);
+}
+}
+
 RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackName,
                                                      io::IODevice* playbackData,
                                                      const TrackParams& params)
@@ -163,29 +188,75 @@ RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackNam
 
     using RetType = RetVal2<TrackId, TrackParams>;
 
-    if (!playbackData) {
-        return RetType::make_ret(Err::InvalidAudioFilePath);
-    }
-
-    //! NOTE The device is read here, once, and is not used after this call returns:
-    //! the audio is decoded into memory (see FileAudioNode)
-    if (!playbackData->isOpen() && !playbackData->open(io::IODevice::ReadOnly)) {
-        return RetType::make_ret(Err::InvalidAudioFilePath);
-    }
-
-    if (!playbackData->seek(0)) {
-        return RetType::make_ret(Err::InvalidAudioFilePath);
-    }
-
-    RetVal<codec::PcmAudio> audio = codec::WavDecoder::decode(playbackData->readData(), playbackData->size());
+    //! NOTE One clip: the whole file from time zero.
+    //! The device is read here, once, and is not used after this call returns
+    RetVal<codec::PcmAudio> audio = decodeDevice(playbackData);
     if (!audio.ret) {
         return RetType::make_ret(audio.ret);
     }
 
+    static const std::string FILE_KEY = "file";
+
+    AudioClip clip;
+    clip.sourceKey = FILE_KEY;
+    clip.lengthSecs = audio.val.isValid() ? static_cast<double>(audio.val.frames()) / audio.val.sampleRate : 0.0;
+
+    ClipAudioNode::Sources sources;
+    sources.emplace(FILE_KEY, std::make_shared<const codec::PcmAudio>(std::move(audio.val)));
+
+    ClipAudioNodePtr source = std::make_shared<ClipAudioNode>(std::move(sources), AudioClipList { clip });
+    return addClipTrack(trackName, source, params);
+}
+
+RetVal2<TrackId, TrackParams> AudioContext::addTrack(const std::string& trackName,
+                                                     const AudioClipTrackData& data,
+                                                     const TrackParams& params)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    using RetType = RetVal2<TrackId, TrackParams>;
+
+    //! NOTE Every device is read here, once, and is not used after this call returns.
+    //! A source that cannot be read or decoded is left out (its clips are dropped when the list is
+    //! built), so one bad file does not silence the others. Only a track none of whose sources can be
+    //! read is refused.
+    ClipAudioNode::Sources sources;
+    Ret lastError = make_ret(Err::InvalidAudioFilePath);
+    for (const AudioClipSource& s : data.sources) {
+        if (s.key.empty() || sources.find(s.key) != sources.end()) {
+            LOGE() << "audio clip source without a key, or with a key used twice: left out";
+            continue;
+        }
+
+        RetVal<codec::PcmAudio> audio = decodeDevice(reinterpret_cast<io::IODevice*>(s.device));
+        if (!audio.ret) {
+            LOGE() << "audio clip source " << s.key << " cannot be decoded, its clips stay silent: " << audio.ret.toString();
+            lastError = audio.ret;
+            continue;
+        }
+
+        sources.emplace(s.key, std::make_shared<const codec::PcmAudio>(std::move(audio.val)));
+    }
+
+    if (sources.empty() && !data.sources.empty()) {
+        return RetType::make_ret(lastError);
+    }
+
+    ClipAudioNodePtr source = std::make_shared<ClipAudioNode>(std::move(sources), data.clips);
+    source->listenToClipChanges(data.clipsChanged);
+
+    return addClipTrack(trackName, source, params);
+}
+
+RetVal2<TrackId, TrackParams> AudioContext::addClipTrack(const std::string& trackName, AudioSourceNodePtr source,
+                                                         const TrackParams& params)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    using RetType = RetVal2<TrackId, TrackParams>;
+
     TrackId trackId = newTrackId();
 
-    // Make source
-    FileAudioNodePtr source = std::make_shared<FileAudioNode>(std::make_shared<const codec::PcmAudio>(std::move(audio.val)));
     source->setOutputSpec(outputSpec());
     source->applyInputParams(params.source);
 

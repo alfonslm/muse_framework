@@ -300,6 +300,35 @@ void EngineRpcController::init()
             }
         });
 
+        onLongRequest(ctxId, MsgCode::AddTrackWithAudioClips, [this](const Msg& msg) {
+            ONLY_AUDIO_RPC_THREAD;
+
+            using RetType = RetVal2<TrackId, TrackParams>;
+
+            TrackName trackName;
+            AudioClipTrackData data;
+            TrackParams params;
+            rpc::StreamId clipsStreamId = 0;
+            IF_ASSERT_FAILED(RpcPacker::unpack(msg.data, trackName, data.sources, data.clips, params, clipsStreamId)) {
+                return make_response(msg, RpcPacker::pack(RetType::make_ret(Err::InvalidRpcData)));
+            }
+
+            if (auto actx = audioContext(msg.ctxId)) {
+                RetType ret = actx->addTrack(trackName, data, params);
+
+                //! NOTE Only for a track that exists. Lists the app sent meanwhile are behind this request
+                //! in the same queue, so none is lost. They are applied on this thread without the
+                //! operation lock: the clip source hands them to the processing thread wait-free.
+                if (ret.ret) {
+                    channel()->addReceiveStream(StreamName::AudioClipsStream, clipsStreamId, data.clipsChanged);
+                }
+
+                return make_response(msg, RpcPacker::pack(ret));
+            } else {
+                return make_response(msg, RpcPacker::pack(RetType::make_ret(Err::InvalidContext)));
+            }
+        });
+
         onLongRequest(ctxId, MsgCode::AddAuxTrack, [this](const Msg& msg) {
             ONLY_AUDIO_RPC_THREAD;
 

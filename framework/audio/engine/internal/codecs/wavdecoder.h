@@ -47,6 +47,24 @@ struct PcmAudio {
     }
 };
 
+//! Where the samples of a WAV file are and how they are stored (see parseWav)
+struct WavLayout {
+    uint16_t tag = 0;               //! 1 = integer PCM, 3 = IEEE float (extensible resolved)
+    uint16_t channels = 0;
+    uint32_t sampleRate = 0;
+    uint16_t blockAlign = 0;        //! bytes per frame
+    uint16_t bitsPerSample = 0;
+    const uint8_t* samples = nullptr;   //! first frame, inside the parsed bytes
+    size_t frames = 0;
+};
+
+//! Walks the RIFF chunks and checks the format (the rules and limits of WavDecoder::decode,
+//! except the length limit). `samples` points into `data`, which must outlive the result.
+RetVal<WavLayout> parseWav(const uint8_t* data, size_t size);
+
+//! Converts one sample (at `p`) to float
+float decodeWavSample(const uint8_t* p, const WavLayout& layout);
+
 //! RIFF/WAVE: PCM 8/16/24/32 bit integer and 32/64 bit float,
 //! plain or WAVE_FORMAT_EXTENSIBLE.
 //! Works on bytes that are already in memory, never touches the file system.

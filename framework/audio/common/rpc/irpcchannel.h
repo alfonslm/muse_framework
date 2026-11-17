@@ -78,6 +78,7 @@ enum class MsgCode {
     GetTrackName,
     AddTrackWithPlaybackData,
     AddTrackWithIODevice,
+    AddTrackWithAudioClips,
     AddAuxTrack,
     // notification
     TrackAdded,
@@ -148,7 +149,8 @@ enum class MsgCode {
     PlaybackPositionStream,
     PlaybackPositionAnchorStream,
     InputProcessingProgressStream,
-    SaveSoundTrackProgressStream
+    SaveSoundTrackProgressStream,
+    AudioClipsStream
 };
 
 inline std::string to_string(MsgCode m)
@@ -182,6 +184,7 @@ inline std::string to_string(MsgCode m)
     case MsgCode::GetTrackName: return "GetTrackName";
     case MsgCode::AddTrackWithPlaybackData: return "AddTrackWithPlaybackData";
     case MsgCode::AddTrackWithIODevice: return "AddTrackWithIODevice";
+    case MsgCode::AddTrackWithAudioClips: return "AddTrackWithAudioClips";
     case MsgCode::AddAuxTrack: return "AddAuxTrack";
     case MsgCode::TrackAdded: return "TrackAdded";
     case MsgCode::TrackRemoved: return "TrackRemoved";
@@ -251,6 +254,7 @@ inline std::string to_string(MsgCode m)
     case MsgCode::PlaybackPositionAnchorStream: return "PlaybackPositionAnchorStream";
     case MsgCode::InputProcessingProgressStream: return "InputProcessingProgressStream";
     case MsgCode::SaveSoundTrackProgressStream: return "SaveSoundTrackProgressStream";
+    case MsgCode::AudioClipsStream: return "AudioClipsStream";
     }
 
     assert(false && "unknown enum value");

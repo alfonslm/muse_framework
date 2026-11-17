@@ -25,6 +25,7 @@
 #include "global/async/promise.h"
 #include "global/async/channel.h"
 #include "audio/common/audiotypes.h"
+#include "audio/common/audiocliptypes.h"
 
 namespace muse::audio::engine {
 class IAudioContext
@@ -45,6 +46,8 @@ public:
 
     // Tracks
     virtual RetVal2<TrackId, TrackParams> addTrack(const TrackName& trackName, io::IODevice* playbackData, const TrackParams& params) = 0;
+    //! NOTE A track that plays audio clips (FontDaw): every source is decoded here, the devices are not used afterwards
+    virtual RetVal2<TrackId, TrackParams> addTrack(const TrackName& trackName, const AudioClipTrackData& data, const TrackParams& params) = 0;
     virtual RetVal2<TrackId, TrackParams> addTrack(const TrackName& trackName, const mpe::PlaybackData& playbackData,
                                                    const TrackParams& params) = 0;
     virtual RetVal2<TrackId, TrackParams> addAuxTrack(const TrackName& trackName, const TrackParams& params) = 0;
