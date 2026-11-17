@@ -30,8 +30,12 @@
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsthostapplication.h"
+#include "pluginterfaces/vst/ivstmessage.h"
+#include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/vst/ivstpluginterfacesupport.h"
+#include "pluginterfaces/vst/ivstunits.h"
 
+#include "vst/internal/vstcomponenthandler.h"
 #include "vst/internal/vsthostcontext.h"
 #include "vst/internal/vsttrace.h"
 
@@ -50,6 +54,7 @@ class Vst_TraceTests : public ::testing::Test
 protected:
     void SetUp() override
     {
+        trace::initQueue();
         trace::setEnabled(true);
         trace::drainTo(nullptr, nullptr);
     }
@@ -217,4 +222,68 @@ TEST_F(Vst_TraceTests, HostContextGivesInterfaceSupportWithTraceOff)
     support->release();
 
     EXPECT_EQ(trace::pendingCount(), 0u);
+}
+
+TEST_F(Vst_TraceTests, NothingIsBuiltOrQueuedWhileOff)
+{
+    trace::setEnabled(false);
+
+    VstHostContext context;
+    void* obj = nullptr;
+    context.queryInterface(IHostApplication::iid, &obj);
+    if (obj) {
+        static_cast<FUnknown*>(obj)->release();
+    }
+
+    TUID messageIid;
+    IMessage::iid.toTUID(messageIid);
+    obj = nullptr;
+    context.createInstance(messageIid, messageIid, &obj);
+    if (obj) {
+        static_cast<FUnknown*>(obj)->release();
+    }
+
+    FUnknownPtr<VstComponentHandler> handler(new VstComponentHandler());
+    IComponentHandler* componentHandler = handler;
+    componentHandler->restartComponent(kLatencyChanged);
+    obj = nullptr;
+    componentHandler->queryInterface(IComponentHandlerBusActivation::iid, &obj);
+
+    EXPECT_EQ(trace::pendingCount(), 0u);
+}
+
+TEST_F(Vst_TraceTests, InterfaceSupportListsWhatTheHostUses)
+{
+    VstHostContext context;
+    void* obj = nullptr;
+    ASSERT_EQ(context.queryInterface(IPlugInterfaceSupport::iid, &obj), kResultOk);
+    auto* support = static_cast<IPlugInterfaceSupport*>(obj);
+
+    EXPECT_EQ(support->isPlugInterfaceSupported(IComponent::iid), kResultTrue);
+    EXPECT_EQ(support->isPlugInterfaceSupported(IAudioProcessor::iid), kResultTrue);
+    EXPECT_EQ(support->isPlugInterfaceSupported(IEditController::iid), kResultTrue);
+    EXPECT_EQ(support->isPlugInterfaceSupported(IConnectionPoint::iid), kResultTrue);
+    EXPECT_EQ(support->isPlugInterfaceSupported(IMidiMapping::iid), kResultTrue);
+
+    EXPECT_NE(support->isPlugInterfaceSupported(IUnitInfo::iid), kResultTrue);
+    EXPECT_NE(support->isPlugInterfaceSupported(IUnitData::iid), kResultTrue);
+    EXPECT_NE(support->isPlugInterfaceSupported(IProgramListData::iid), kResultTrue);
+    EXPECT_NE(support->isPlugInterfaceSupported(IEditController2::iid), kResultTrue);
+
+    support->release();
+}
+
+TEST_F(Vst_TraceTests, StateIntoFixedBuffer)
+{
+    char buffer[64];
+    EXPECT_STREQ(trace::formatProcessContextState(0, buffer, sizeof(buffer)), "-");
+    EXPECT_STREQ(trace::formatProcessContextState(ProcessContext::kPlaying | ProcessContext::kTempoValid, buffer, sizeof(buffer)),
+                 "playing|tempo");
+    EXPECT_EQ(trace::formatProcessContextState(ProcessContext::kPlaying, buffer, sizeof(buffer)),
+              trace::processContextStateToString(ProcessContext::kPlaying));
+
+    //! Too small: cut, still terminated
+    char tiny[6];
+    trace::formatProcessContextState(ProcessContext::kPlaying | ProcessContext::kTempoValid, tiny, sizeof(tiny));
+    EXPECT_EQ(std::string(tiny).size(), 5u);
 }
