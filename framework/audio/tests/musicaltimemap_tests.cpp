@@ -162,3 +162,59 @@ TEST_F(Audio_MusicalTimeMapTests, BeforeFirstPoint)
     EXPECT_DOUBLE_EQ(pos.barStartQuarters, 0.0);
     EXPECT_EQ(pos.timeSigNumerator, 3);
 }
+
+TEST_F(Audio_MusicalTimeMapTests, NoBarsNoBarPosition)
+{
+    //! Tempo only: the bar start is not known, and must not be reported
+    MusicalTimeMap map;
+    map.tempo = { { 0.0, 0.0, 2.0 } };
+
+    const MusicalPosition pos = map.positionAt(3.0);
+    EXPECT_TRUE(pos.isValid());
+    EXPECT_FALSE(pos.hasBar);
+    EXPECT_FALSE(pos.hasTimeSig());
+
+    map.bars = { { 0.0, 4, 4, 0.0 } };
+    EXPECT_TRUE(map.positionAt(3.0).hasBar);
+}
+
+TEST_F(Audio_MusicalTimeMapTests, SanitizeKeepsAGoodMap)
+{
+    MusicalTimeMap map;
+    map.tempo = { { 0.0, 0.0, 2.0 }, { 3.0, 6.0, 1.0 } };
+    map.bars = { { 0.0, 4, 4, 0.0 }, { 4.0, 3, 4, 0.0 } };
+    const MusicalTimeMap before = map;
+
+    EXPECT_TRUE(map.sanitize());
+    EXPECT_EQ(map, before);
+}
+
+TEST_F(Audio_MusicalTimeMapTests, SanitizeDropsAndSorts)
+{
+    MusicalTimeMap map;
+    map.tempo = {
+        { 3.0, 6.0, 1.0 },
+        { 0.0, 0.0, 2.0 },
+        { 4.0, 7.0, 0.0 },                  // no tempo
+        { 5.0, 8.0, std::nan("") },          // not a number
+        { 6.0, 9.0, -1.0 },                  // negative
+    };
+    map.bars = {
+        { 4.0, 3, 4, 0.0 },
+        { 0.0, 4, 4, 0.0 },
+        { 8.0, 0, 4, 0.0 },                 // no numerator
+    };
+
+    EXPECT_FALSE(map.sanitize());
+
+    ASSERT_EQ(map.tempo.size(), 2u);
+    EXPECT_DOUBLE_EQ(map.tempo[0].secs, 0.0);
+    EXPECT_DOUBLE_EQ(map.tempo[1].secs, 3.0);
+
+    ASSERT_EQ(map.bars.size(), 2u);
+    EXPECT_DOUBLE_EQ(map.bars[0].quarters, 0.0);
+    EXPECT_DOUBLE_EQ(map.bars[1].quarters, 4.0);
+
+    //! The lookups work on the result
+    EXPECT_DOUBLE_EQ(map.positionAt(4.0).quarters, 7.0);
+}

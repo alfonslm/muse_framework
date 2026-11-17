@@ -394,7 +394,12 @@ void VstAudioClient::updateProcessContext(samples_t playbackPositionSamples, con
     m_processContext.tempo = musicalPosition.bpm;
     m_processContext.projectTimeMusic = musicalPosition.quarters;
     m_processContext.barPositionMusic = musicalPosition.barStartQuarters;
-    m_processContext.state |= Context::kTempoValid | Context::kProjectTimeMusicValid | Context::kBarPositionValid;
+    m_processContext.state |= Context::kTempoValid | Context::kProjectTimeMusicValid;
+
+    //! Only from the map's bars: without them the bar start would be a made-up 0
+    if (musicalPosition.hasBar) {
+        m_processContext.state |= Context::kBarPositionValid;
+    }
 
     if (musicalPosition.hasTimeSig()) {
         m_processContext.timeSigNumerator = musicalPosition.timeSigNumerator;

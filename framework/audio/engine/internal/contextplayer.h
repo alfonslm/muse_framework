@@ -23,6 +23,8 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
+#include <vector>
 
 #include "global/types/retval.h"
 #include "global/async/channel.h"
@@ -59,7 +61,7 @@ public:
 
     Ret setLoop(const secs_t from, const secs_t to) override;
     void resetLoop() override;
-    void setMusicalTimeMap(const MusicalTimeMap& map) override;
+    void setMusicalTimeMap(MusicalTimeMap map) override;
 
     secs_t playbackPosition() const override;
     async::Channel<secs_t> playbackPositionChanged() const override;
@@ -123,7 +125,21 @@ private:
     secs_t m_timeLoopStart = 0.;
     secs_t m_timeLoopEnd = 0.;
 
-    MusicalTimeMap m_musicalTimeMap;
+    //! The musical time map. The engine thread owns it (m_musicalTimeMap) and publishes it to the
+    //! processing thread through an atomic pointer. A replaced map is kept (m_retiredMaps) until two
+    //! more blocks have been processed, so that a block that started before the swap can finish
+    //! reading it; it is then freed on the engine thread, never on the processing thread.
+    struct RetiredMap {
+        std::shared_ptr<const MusicalTimeMap> map;
+        uint64_t retiredAtBlock = 0;
+    };
+
+    void freeRetiredMaps();
+
+    std::shared_ptr<const MusicalTimeMap> m_musicalTimeMap;
+    std::atomic<const MusicalTimeMap*> m_musicalTimeMapForProc = nullptr;
+    std::vector<RetiredMap> m_retiredMaps;
+    std::atomic<uint64_t> m_processedBlocks = 0;
 
     async::Channel<TimeEvent> m_timeEvent;
 

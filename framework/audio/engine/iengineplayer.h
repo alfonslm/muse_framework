@@ -53,7 +53,7 @@ public:
     virtual void setDuration(const secs_t duration) = 0;
     virtual Ret setLoop(const secs_t from, const secs_t to) = 0;
     virtual void resetLoop() = 0;
-    virtual void setMusicalTimeMap(const MusicalTimeMap& map) = 0;
+    virtual void setMusicalTimeMap(MusicalTimeMap map) = 0;
 
     virtual secs_t playbackPosition() const = 0;
     virtual async::Channel<secs_t> playbackPositionChanged() const = 0;
