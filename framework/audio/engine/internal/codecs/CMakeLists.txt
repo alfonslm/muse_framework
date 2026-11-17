@@ -21,7 +21,7 @@
 # engine (playback) and the app (import checks, waveform peaks) decode with the same code (FD-050).
 # vorbisdecoder.* (SoundFonts) stays in the engine.
 
-muse_create_module(muse_audio_codecs NO_QT NO_PCH)
+muse_create_module(muse_audio_codecs NO_QT NO_PCH NO_UNITY) # each decoder has its own file-local helpers
 
 target_sources(muse_audio_codecs PRIVATE
     audiodecoder.cpp
