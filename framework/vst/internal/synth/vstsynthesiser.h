@@ -61,6 +61,7 @@ public:
 
     muse::audio::TimePosition playbackPosition() const override;
     void setPlaybackPosition(const muse::audio::TimePosition& position) override;
+    void setPlayheadPosition(audio::engine::PlayheadPositionPtr playheadPosition) override;
 
     void setOutputSpec(const audio::OutputSpec& spec) override;
     muse::audio::samples_t process(float* buffer, muse::audio::samples_t samplesPerChannel) override;
@@ -69,7 +70,6 @@ private:
 
     void toggleVolumeGain(const bool isActive);
     void applyKeyswitchMap();
-    audio::samples_t processSequence(const VstSequencer::EventSequence& sequence, const audio::samples_t samples, float* buffer);
 
     IVstPluginInstancePtr m_pluginPtr = nullptr;
     std::unique_ptr<VstAudioClient> m_vstAudioClient = nullptr;
@@ -84,6 +84,9 @@ private:
     bool m_useDynamicEvents = false;
 
     audio::TimePosition m_currentPosition;
+    audio::engine::PlayheadPositionPtr m_playheadPosition = nullptr;
+
+    VstAudioClient::VolumeGainChanges m_volumeGainChanges;
 };
 
 using VstSynthPtr = std::shared_ptr<VstSynthesiser>;

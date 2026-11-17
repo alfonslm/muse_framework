@@ -30,6 +30,7 @@
 #include "global/types/retval.h"
 
 #include "audio/common/audiotypes.h"
+#include "audio/common/musicaltimemap.h"
 
 namespace muse::audio {
 class IPlayer
@@ -51,6 +52,9 @@ public:
     virtual void setDuration(const secs_t duration) = 0;
     virtual async::Promise<bool> setLoop(const secs_t from, const secs_t to) = 0;
     virtual void resetLoop() = 0;
+
+    //! Tempo, time signatures and bar lines of the music being played, for plugins that follow the host transport
+    virtual void setMusicalTimeMap(const MusicalTimeMap& map) = 0;
 
     virtual secs_t playbackPosition() const = 0;
     virtual async::Channel<secs_t> playbackPositionChanged() const = 0;

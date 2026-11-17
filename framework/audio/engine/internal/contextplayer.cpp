@@ -22,6 +22,8 @@
 
 #include "contextplayer.h"
 
+#include "global/containers.h"
+
 #include "audio/common/audiosanitizer.h"
 #include "audio/common/audioerrors.h"
 #include "audio/common/audioclock.h"
@@ -79,6 +81,9 @@ void ContextPlayer::onStatusChanged(const PlaybackStatus status)
 void ContextPlayer::forward(const TimePosition& delta)
 {
     ONLY_AUDIO_PROC_THREAD;
+
+    //! Called once at the end of every processed block, playing or not
+    m_processedBlocks.fetch_add(1, std::memory_order_release);
 
     // Check: Active
     if (m_status.val != PlaybackStatus::Running) {
@@ -146,6 +151,12 @@ TimePosition ContextPlayer::proc_onTimeChanged(const TimePosition& delta)
 const TimePosition& ContextPlayer::currentPosition() const
 {
     return m_currentPosition;
+}
+
+MusicalPosition ContextPlayer::musicalPosition(const TimePosition& position) const
+{
+    const MusicalTimeMap* map = m_musicalTimeMapForProc.load(std::memory_order_acquire);
+    return map ? map->positionAt(position.time().raw()) : MusicalPosition();
 }
 
 void ContextPlayer::onTimeEvent(const TimeEvent event)
@@ -305,6 +316,38 @@ void ContextPlayer::resetLoop()
     ONLY_ON_OPERATION_EXEC;
     m_timeLoopStart = 0;
     m_timeLoopEnd = 0;
+}
+
+void ContextPlayer::setMusicalTimeMap(MusicalTimeMap map)
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    if (!map.sanitize()) {
+        LOGW() << "Musical time map with unusable or unsorted points; they were dropped or sorted";
+    }
+
+    std::shared_ptr<const MusicalTimeMap> newMap = map.isValid() ? std::make_shared<const MusicalTimeMap>(std::move(map)) : nullptr;
+
+    m_musicalTimeMapForProc.store(newMap.get(), std::memory_order_release);
+
+    if (m_musicalTimeMap) {
+        m_retiredMaps.push_back({ std::move(m_musicalTimeMap), m_processedBlocks.load(std::memory_order_acquire) });
+    }
+    m_musicalTimeMap = std::move(newMap);
+
+    freeRetiredMaps();
+}
+
+void ContextPlayer::freeRetiredMaps()
+{
+    ONLY_AUDIO_ENGINE_THREAD;
+
+    //! A block that read the old pointer started at the latest during the block that was running at the swap;
+    //! once two more block ends have been counted, it has finished
+    const uint64_t processed = m_processedBlocks.load(std::memory_order_acquire);
+    muse::remove_if(m_retiredMaps, [processed](const RetiredMap& retired) {
+        return processed >= retired.retiredAtBlock + 2;
+    });
 }
 
 secs_t ContextPlayer::playbackPosition() const

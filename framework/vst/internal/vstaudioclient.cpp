@@ -25,6 +25,8 @@
 
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 
+#include "global/defer.h"
+
 #include "vsttrace.h"
 
 #include "log.h"
@@ -261,8 +263,16 @@ void VstAudioClient::flushSound()
 }
 
 audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChannel,
-                                         samples_t playbackPositionSamples)
+                                         samples_t playbackPositionSamples, const MusicalPosition& musicalPosition,
+                                         const VolumeGainChanges& volumeGainChanges)
 {
+    //! NOTE Whatever happens below, the gain changes of this call still take effect
+    DEFER {
+        if (!volumeGainChanges.empty()) {
+            m_volumeGain = volumeGainChanges.back().second;
+        }
+    };
+
     IAudioProcessorPtr processor = pluginProcessor();
     if (!processor || !output) {
         return 0;
@@ -279,7 +289,7 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
     //! but never bigger than the maxSamplesPerBlock
     m_processData.numSamples = samplesPerChannel;
 
-    m_processContext.projectTimeSamples = playbackPositionSamples;
+    updateProcessContext(playbackPositionSamples, musicalPosition);
 
     if (trace::isEnabled()) {
         traceBeforeProcess(samplesPerChannel);
@@ -309,7 +319,7 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
         m_inputEvents.clear();
         m_inputParamChanges.clearQueue();
 
-        fillOutputBufferInstrument(samplesPerChannel, output);
+        fillOutputBufferInstrument(samplesPerChannel, output, volumeGainChanges);
     } else {
         fillOutputBufferFx(samplesPerChannel, output);
     }
@@ -363,6 +373,39 @@ PluginComponentPtr VstAudioClient::pluginComponent() const
     }
 
     return m_pluginComponent;
+}
+
+void VstAudioClient::updateProcessContext(samples_t playbackPositionSamples, const MusicalPosition& musicalPosition)
+{
+    using Context = VstProcessContext;
+
+    static constexpr uint32_t MUSICAL_FLAGS = Context::kTempoValid | Context::kProjectTimeMusicValid
+                                              | Context::kBarPositionValid | Context::kTimeSigValid;
+
+    m_processContext.projectTimeSamples = playbackPositionSamples;
+    m_processContext.state &= ~MUSICAL_FLAGS;
+
+    //! NOTE Without these a plugin that follows the host transport (a sequencer, an arpeggiator, a tempo-synced delay...)
+    //! does not know the tempo, nor which bar and beat it is at
+    if (!musicalPosition.isValid()) {
+        return;
+    }
+
+    m_processContext.tempo = musicalPosition.bpm;
+    m_processContext.projectTimeMusic = musicalPosition.quarters;
+    m_processContext.barPositionMusic = musicalPosition.barStartQuarters;
+    m_processContext.state |= Context::kTempoValid | Context::kProjectTimeMusicValid;
+
+    //! Only from the map's bars: without them the bar start would be a made-up 0
+    if (musicalPosition.hasBar) {
+        m_processContext.state |= Context::kBarPositionValid;
+    }
+
+    if (musicalPosition.hasTimeSig()) {
+        m_processContext.timeSigNumerator = musicalPosition.timeSigNumerator;
+        m_processContext.timeSigDenominator = musicalPosition.timeSigDenominator;
+        m_processContext.state |= Context::kTimeSigValid;
+    }
 }
 
 void VstAudioClient::setUpProcessData()
@@ -491,7 +534,7 @@ void VstAudioClient::extractInputSamples(samples_t sampleCount, const float* sou
     }
 }
 
-void VstAudioClient::fillOutputBufferInstrument(samples_t sampleCount, float* output)
+void VstAudioClient::fillOutputBufferInstrument(samples_t sampleCount, float* output, const VolumeGainChanges& volumeGainChanges)
 {
     if (!m_processData.outputs) {
         return;
@@ -500,12 +543,20 @@ void VstAudioClient::fillOutputBufferInstrument(samples_t sampleCount, float* ou
     for (const int busIndex : m_activeOutputBusses) {
         Steinberg::Vst::AudioBusBuffers bus = m_processData.outputs[busIndex];
 
+        muse::audio::gain_t gain = m_volumeGain;
+        size_t nextChangeIdx = 0;
+
         for (samples_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
+            while (nextChangeIdx < volumeGainChanges.size() && volumeGainChanges[nextChangeIdx].first <= sampleIndex) {
+                gain = volumeGainChanges[nextChangeIdx].second;
+                ++nextChangeIdx;
+            }
+
             size_t offset = sampleIndex * m_outputSpec.audioChannelCount;
 
             for (audioch_t audioChannelIndex = 0; audioChannelIndex < bus.numChannels; ++audioChannelIndex) {
                 float sample = bus.channelBuffers32[audioChannelIndex][sampleIndex];
-                output[offset + audioChannelIndex] += sample * m_volumeGain;
+                output[offset + audioChannelIndex] += sample * gain;
             }
         }
     }

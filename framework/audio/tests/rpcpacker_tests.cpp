@@ -111,6 +111,34 @@ TEST_F(Audio_RpcPackerTests, PlaybackPositionAnchor)
     EXPECT_TRUE(origin == unpacked);
 }
 
+TEST_F(Audio_RpcPackerTests, MusicalTimeMap)
+{
+    MusicalTimeMap origin;
+    origin.tempo = { { 0.0, 0.0, 2.0 }, { 3.0, 6.0, 2.0 }, { 5.0, 6.0, 1.5 } };
+    origin.bars = { { 0.0, 4, 4, 1.0 }, { 1.0, 4, 4, 0.0 }, { 9.0, 6, 8, 0.0 } };
+
+    KNOWN_FIELDS(origin,
+                 origin.tempo,
+                 origin.bars);
+    KNOWN_FIELDS(origin.tempo.front(),
+                 origin.tempo.front().secs,
+                 origin.tempo.front().quarters,
+                 origin.tempo.front().bps);
+    KNOWN_FIELDS(origin.bars.front(),
+                 origin.bars.front().quarters,
+                 origin.bars.front().numerator,
+                 origin.bars.front().denominator,
+                 origin.bars.front().lengthQuarters);
+
+    ByteArray data = rpc::RpcPacker::pack(origin);
+
+    MusicalTimeMap unpacked;
+    bool ok = rpc::RpcPacker::unpack(data, unpacked);
+
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(origin == unpacked);
+}
+
 TEST_F(Audio_RpcPackerTests, AudioResourceMeta)
 {
     AudioResourceMeta origin;

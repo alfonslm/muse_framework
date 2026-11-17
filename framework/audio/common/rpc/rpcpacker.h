@@ -26,6 +26,7 @@
 #include "global/serialization/msgpack_forward.h"
 #include "audio/common/audiotypes.h"
 #include "audio/common/audiocliptypes.h"
+#include "audio/common/musicaltimemap.h"
 
 #include "log.h"
 
@@ -40,6 +41,12 @@ void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::PlaybackStatus& valu
 
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::PlaybackPositionAnchor& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::PlaybackPositionAnchor& value);
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::MusicalTimeMap::TempoPoint& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::MusicalTimeMap::TempoPoint& value);
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::MusicalTimeMap::BarPoint& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::MusicalTimeMap::BarPoint& value);
+void pack_custom(muse::msgpack::Packer& p, const muse::audio::MusicalTimeMap& value);
+void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::MusicalTimeMap& value);
 
 void pack_custom(muse::msgpack::Packer& p, const muse::audio::AudioResourceType& value);
 void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::AudioResourceType& value);
@@ -179,6 +186,36 @@ inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::OutputSpec&
 inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::OutputSpec& value)
 {
     p.process(value.sampleRate, value.samplesPerChannel, value.audioChannelCount);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::MusicalTimeMap::TempoPoint& value)
+{
+    p.process(value.secs, value.quarters, value.bps);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::MusicalTimeMap::TempoPoint& value)
+{
+    p.process(value.secs, value.quarters, value.bps);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::MusicalTimeMap::BarPoint& value)
+{
+    p.process(value.quarters, value.numerator, value.denominator, value.lengthQuarters);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::MusicalTimeMap::BarPoint& value)
+{
+    p.process(value.quarters, value.numerator, value.denominator, value.lengthQuarters);
+}
+
+inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::MusicalTimeMap& value)
+{
+    p.process(value.tempo, value.bars);
+}
+
+inline void unpack_custom(muse::msgpack::UnPacker& p, muse::audio::MusicalTimeMap& value)
+{
+    p.process(value.tempo, value.bars);
 }
 
 inline void pack_custom(muse::msgpack::Packer& p, const muse::audio::PlaybackStatus& value)
