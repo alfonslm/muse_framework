@@ -1,6 +1,5 @@
 /*
  * SPDX-License-Identifier: GPL-3.0-only
- * MuseScore-CLA-applies
  *
  * MuseScore Studio
  * Music Composition & Notation
