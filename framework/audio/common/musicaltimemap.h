@@ -50,8 +50,13 @@ struct MusicalPosition {
 //!   tick 0 is also the start of the music; neither negative positions nor a padded first bar can be
 //!   written to a MIDI file without moving the music in time.
 //! - Time is played time: repeats unrolled, the playback speed applied, pauses included.
-//! - A pause (caesura, breath) is two tempo points with the same quarters: the music stands still
-//!   while time runs on. The tempo reported during it is that of the point that starts it.
+//! - A pause (caesura, breath, section-break pause) can be given two ways. FontDaw gives it as extra
+//!   beats: its bar is lengthened by whole beats (a BarPoint with lengthQuarters, and one for the bar
+//!   after) at a tempo close to the surrounding one, so the beats keep moving and last exactly the
+//!   pause; the same function builds this map and the MIDI export's tempo map, so a tempo track
+//!   imported from that file agrees with this map bar for bar. A caller may instead give it as two
+//!   tempo points with the same quarters (the music stands still while time runs on; the tempo
+//!   reported during it is that of the point that starts it); positionAt() handles both.
 //! - Gradual tempo changes are given as steps fine enough for the music (about one per beat).
 //! - Bars: a point at the start, at every time signature change, at every bar that is not as long as
 //!   its time signature says, and at the bar after each of those.
