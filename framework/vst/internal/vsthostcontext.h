@@ -30,6 +30,7 @@ namespace muse::vst {
 //! optional host interfaces they ask about through IPlugInterfaceSupport.
 //! Through IPlugInterfaceSupport it lists only the plugin interfaces the host actually uses:
 //! IComponent, IAudioProcessor, IEditController, IConnectionPoint and IMidiMapping.
+//! It also lists IProcessContextRequirements: the host asks plugins for it when they are loaded.
 class VstHostContext : public Steinberg::Vst::HostApplication
 {
 public:

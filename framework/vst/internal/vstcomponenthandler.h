@@ -52,6 +52,17 @@ private:
     std::atomic_bool m_suppressNotify = false;
 };
 
+//! The clock of ProcessContext::systemTime (vstprocesscontext.h), for plugins that ask the host for it
+class VstSystemTimeHandler : public Steinberg::Vst::IComponentHandlerSystemTime
+{
+    DECLARE_FUNKNOWN_METHODS
+public:
+    VstSystemTimeHandler();
+    virtual ~VstSystemTimeHandler() = default;
+
+    Steinberg::tresult PLUGIN_API getSystemTime(Steinberg::int64& systemTime) override;
+};
+
 class VstComponentHandler : public IComponentHandler
 {
     DECLARE_FUNKNOWN_METHODS
@@ -79,6 +90,7 @@ private:
     async::Notification m_paramsChangedNotify;
 
     Steinberg::FUnknownPtr<VstAdvancedHandler> m_advancedHandler = nullptr;
+    Steinberg::IPtr<VstSystemTimeHandler> m_systemTimeHandler = nullptr;
 
     std::string m_traceName;
     int m_traceEditCount = 0;

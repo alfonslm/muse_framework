@@ -57,6 +57,7 @@ public:
     PluginControllerPtr controller() const override;
     PluginComponentPtr component() const override;
     PluginMidiMappingPtr midiMapping() const override;
+    std::optional<uint32_t> processContextRequirements() const override;
 
     void updatePluginConfig(const muse::audio::AudioUnitConfig& config) override;
     void refreshConfig() override;
@@ -88,5 +89,7 @@ private:
 
     std::atomic_bool m_isLoaded = false;
     async::Notification m_loadingCompleted;
+
+    std::optional<uint32_t> m_processContextRequirements;
 };
 }

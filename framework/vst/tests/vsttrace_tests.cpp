@@ -30,6 +30,7 @@
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsthostapplication.h"
+#include "pluginterfaces/vst/ivstmidilearn.h"
 #include "pluginterfaces/vst/ivstmessage.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/vst/ivstpluginterfacesupport.h"
@@ -188,7 +189,8 @@ TEST_F(Vst_TraceTests, HostContextAnswersAndLogs)
     ASSERT_NE(obj, nullptr);
     auto* support = static_cast<IPlugInterfaceSupport*>(obj);
     EXPECT_EQ(support->isPlugInterfaceSupported(IComponent::iid), kResultTrue);
-    EXPECT_NE(support->isPlugInterfaceSupported(IProcessContextRequirements::iid), kResultTrue);
+    EXPECT_EQ(support->isPlugInterfaceSupported(IProcessContextRequirements::iid), kResultTrue);
+    EXPECT_NE(support->isPlugInterfaceSupported(IMidiLearn::iid), kResultTrue);
     support->release();
 
     //! Something the host does not have
@@ -200,12 +202,13 @@ TEST_F(Vst_TraceTests, HostContextAnswersAndLogs)
 
     std::vector<std::string> lines;
     trace::drainTo(&collect, &lines);
-    ASSERT_EQ(lines.size(), 5u);
+    ASSERT_EQ(lines.size(), 6u);
     EXPECT_EQ(lines[0], "TestPlugin asks the host context for IHostApplication: yes");
     EXPECT_EQ(lines[1], "TestPlugin asks the host context for IPlugInterfaceSupport: yes");
     EXPECT_EQ(lines[2], "TestPlugin asks whether the host supports IComponent: yes");
-    EXPECT_EQ(lines[3], "TestPlugin asks whether the host supports IProcessContextRequirements: no");
-    EXPECT_EQ(lines[4], "TestPlugin asks the host context for IComponentHandlerSystemTime: no");
+    EXPECT_EQ(lines[3], "TestPlugin asks whether the host supports IProcessContextRequirements: yes");
+    EXPECT_EQ(lines[4], "TestPlugin asks whether the host supports IMidiLearn: no");
+    EXPECT_EQ(lines[5], "TestPlugin asks the host context for IComponentHandlerSystemTime: no");
 }
 
 TEST_F(Vst_TraceTests, HostContextGivesInterfaceSupportWithTraceOff)
@@ -222,6 +225,23 @@ TEST_F(Vst_TraceTests, HostContextGivesInterfaceSupportWithTraceOff)
     support->release();
 
     EXPECT_EQ(trace::pendingCount(), 0u);
+}
+
+TEST_F(Vst_TraceTests, ComponentHandlerGivesSystemTime)
+{
+    trace::setEnabled(false);
+    //! Held as VstPluginInstance holds it
+    FUnknownPtr<VstComponentHandler> handler(new VstComponentHandler());
+
+    void* obj = nullptr;
+    ASSERT_EQ(handler->queryInterface(IComponentHandlerSystemTime::iid, &obj), kResultOk);
+    ASSERT_NE(obj, nullptr);
+    auto* systemTime = static_cast<IComponentHandlerSystemTime*>(obj);
+
+    int64 now = 0;
+    EXPECT_EQ(systemTime->getSystemTime(now), kResultOk);
+    EXPECT_GT(now, 0);
+    systemTime->release();
 }
 
 TEST_F(Vst_TraceTests, NothingIsBuiltOrQueuedWhileOff)
@@ -264,6 +284,7 @@ TEST_F(Vst_TraceTests, InterfaceSupportListsWhatTheHostUses)
     EXPECT_EQ(support->isPlugInterfaceSupported(IEditController::iid), kResultTrue);
     EXPECT_EQ(support->isPlugInterfaceSupported(IConnectionPoint::iid), kResultTrue);
     EXPECT_EQ(support->isPlugInterfaceSupported(IMidiMapping::iid), kResultTrue);
+    EXPECT_EQ(support->isPlugInterfaceSupported(IProcessContextRequirements::iid), kResultTrue);
 
     EXPECT_NE(support->isPlugInterfaceSupported(IUnitInfo::iid), kResultTrue);
     EXPECT_NE(support->isPlugInterfaceSupported(IUnitData::iid), kResultTrue);
