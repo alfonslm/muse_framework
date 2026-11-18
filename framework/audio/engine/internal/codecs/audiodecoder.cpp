@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 #include <vector>
 
 #include "audio/common/audioerrors.h"
@@ -153,7 +154,10 @@ RetVal<samples_t> codec::readAll(IAudioDecoder& decoder, const AudioBlockHandler
         return RetVal<samples_t>::make_ret(decodeError("audio without channels or sample rate"));
     }
 
-    const size_t maxFrames = maxSamples / info.channels;
+    // The per-source cap, the same for every caller: a length at the source's own rate, and never
+    // more than maxSamples
+    const size_t byDuration = static_cast<size_t>(info.sampleRate) * info.channels * MAX_DECODED_SECONDS;
+    const size_t maxFrames = std::min(maxSamples, byDuration) / info.channels;
     if (static_cast<size_t>(info.frames) > maxFrames) {
         return RetVal<samples_t>::make_ret(decodeError("audio file is too long to load"));
     }
@@ -174,8 +178,8 @@ RetVal<samples_t> codec::readAll(IAudioDecoder& decoder, const AudioBlockHandler
             // A format whose header does not give the length (or gives a wrong one)
             return RetVal<samples_t>::make_ret(decodeError("audio file is too long to load"));
         }
-        if (onBlock) {
-            onBlock(block.data(), got);
+        if (onBlock && !onBlock(block.data(), got)) {
+            return RetVal<samples_t>::make_ret(decodeError("reading the audio was stopped"));
         }
     }
 
@@ -190,28 +194,134 @@ RetVal<samples_t> codec::readAll(IAudioDecoder& decoder, const AudioBlockHandler
     return RetVal<samples_t>::make_ok(static_cast<samples_t>(done));
 }
 
-RetVal<PcmAudio> codec::decodeAll(IAudioDecoder& decoder, size_t maxSamples)
+DecodedAudioBudget::DecodedAudioBudget(size_t maxSamples)
+    : m_maxSamples(maxSamples)
+{
+}
+
+DecodedAudioBudget& DecodedAudioBudget::global()
+{
+    static DecodedAudioBudget budget;
+    return budget;
+}
+
+bool DecodedAudioBudget::tryAcquire(size_t samples)
+{
+    size_t used = m_used.load();
+    do {
+        if (samples > m_maxSamples - used) {
+            return false;
+        }
+    } while (!m_used.compare_exchange_weak(used, used + samples));
+    return true;
+}
+
+void DecodedAudioBudget::release(size_t samples)
+{
+    m_used.fetch_sub(samples);
+}
+
+size_t DecodedAudioBudget::used() const
+{
+    return m_used.load();
+}
+
+size_t DecodedAudioBudget::maxSamples() const
+{
+    return m_maxSamples;
+}
+
+namespace {
+//! A source's share of a DecodedAudioBudget, given back when the last PcmAudio holding it goes
+struct BudgetLease {
+    DecodedAudioBudget& budget;
+    size_t samples = 0;
+
+    explicit BudgetLease(DecodedAudioBudget& b)
+        : budget(b) {}
+    ~BudgetLease() { budget.release(samples); }
+
+    BudgetLease(const BudgetLease&) = delete;
+    BudgetLease& operator=(const BudgetLease&) = delete;
+
+    //! Holds at least `wanted` samples, taking more in steps so the budget is not touched per block
+    bool growTo(size_t wanted)
+    {
+        constexpr size_t STEP = size_t(1) << 20;
+        if (wanted <= samples) {
+            return true;
+        }
+        const size_t more = std::max(wanted - samples, STEP);
+        if (budget.tryAcquire(more)) {
+            samples += more;
+            return true;
+        }
+        if (more > wanted - samples && budget.tryAcquire(wanted - samples)) {
+            samples = wanted;
+            return true;
+        }
+        return false;
+    }
+
+    void shrinkTo(size_t kept)
+    {
+        if (kept < samples) {
+            budget.release(samples - kept);
+            samples = kept;
+        }
+    }
+};
+}
+
+RetVal<PcmAudio> codec::decodeAll(IAudioDecoder& decoder, size_t maxSamples, DecodedAudioBudget& budget)
 {
     const AudioStreamInfo info = decoder.info();
 
     PcmAudio audio;
     audio.sampleRate = info.sampleRate;
     audio.channels = info.channels;
-    if (info.channels > 0) {
-        // Only a hint, and a bounded one: a compressed format's header states its length, and a few
-        // crafted bytes must not make us reserve gigabytes. Longer audio grows the buffer as it is read.
-        constexpr size_t MAX_RESERVED_SAMPLES = size_t(1) << 24;
-        const size_t hint = std::min(static_cast<size_t>(info.frames), maxSamples / info.channels) * info.channels;
-        audio.samples.reserve(std::min(hint, MAX_RESERVED_SAMPLES));
+
+    auto lease = std::make_shared<BudgetLease>(budget);
+    Ret stoppedBy = make_ok();
+
+    try {
+        if (info.channels > 0) {
+            // Only a hint, and a bounded one: a compressed format's header states its length, and a
+            // few crafted bytes must not make us reserve gigabytes. Longer audio grows the buffer.
+            constexpr size_t MAX_RESERVED_SAMPLES = size_t(1) << 24;
+            const size_t hint = std::min(std::min(static_cast<size_t>(info.frames), maxSamples / info.channels) * info.channels,
+                                         MAX_RESERVED_SAMPLES);
+            if (lease->growTo(hint)) {
+                audio.samples.reserve(hint);
+            }
+        }
+    } catch (const std::bad_alloc&) {
+        return RetVal<PcmAudio>::make_ret(decodeError("not enough memory to load the audio"));
     }
 
-    RetVal<samples_t> read = readAll(decoder, [&audio](const float* interleaved, samples_t frames) {
-        audio.samples.insert(audio.samples.end(), interleaved, interleaved + static_cast<size_t>(frames) * audio.channels);
+    RetVal<samples_t> read = readAll(decoder, [&](const float* interleaved, samples_t frames) {
+        const size_t n = static_cast<size_t>(frames) * audio.channels;
+        if (!lease->growTo(audio.samples.size() + n)) {
+            stoppedBy = decodeError("too much decoded audio is loaded already");
+            return false;
+        }
+        try {
+            audio.samples.insert(audio.samples.end(), interleaved, interleaved + n);
+        } catch (const std::bad_alloc&) {
+            stoppedBy = decodeError("not enough memory to load the audio");
+            return false;
+        }
+        return true;
     }, maxSamples);
 
+    if (!stoppedBy) {
+        return RetVal<PcmAudio>::make_ret(stoppedBy);
+    }
     if (!read.ret) {
         return RetVal<PcmAudio>::make_ret(read.ret);
     }
 
+    lease->shrinkTo(audio.samples.size());
+    audio.budgetLease = lease;
     return RetVal<PcmAudio>::make_ok(std::move(audio));
 }

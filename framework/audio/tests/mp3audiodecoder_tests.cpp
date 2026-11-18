@@ -25,7 +25,7 @@
 #include <thread>
 #include <vector>
 
-// pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init (FD-040).
+// pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init.
 #pragma pack(push, 1)
 #include "audio/common/audiotypes.h"
 #pragma pack(pop)
@@ -107,7 +107,7 @@ TEST(Audio_Mp3AudioDecoderTests, ReferenceWithTagIsGaplessAndOnTheBeat)
 
 //! Measured: 25344 frames (24000 + 1344, the encoder delay is kept), lag 1105 frames (23 ms) on both
 //! channels; shifted back by that lag the max difference to reference.wav is the same 0.0394.
-//! FontDaw's own MP3 export has no tag either (FD-110), so this is what its import does today.
+//! An encoder that writes no such tag gives this result for every file it makes.
 TEST(Audio_Mp3AudioDecoderTests, FileWithoutTagKeepsEncoderDelay)
 {
     const std::vector<uint8_t> bytes = readCodecTestFile("notag.mp3");
@@ -273,4 +273,24 @@ TEST(Audio_Mp3AudioDecoderTests, DecodesOnSeveralThreads)
         ASSERT_TRUE(r.ok);
         EXPECT_EQ(r.audio.samples, results[0].audio.samples);
     }
+}
+
+TEST(Audio_Mp3AudioDecoderTests, AChannelSwitchInsideTheStreamIsConverted)
+{
+    // 0.2 s mono, then 0.2 s stereo, 48 kHz (data/codecs/make_testdata.sh): the stream decodes with
+    // the first frame's channel count and the stereo part is mixed down by mpg123, not refused
+    const std::vector<uint8_t> bytes = readCodecTestFile("monostereo.mp3");
+    ASSERT_FALSE(bytes.empty());
+    EXPECT_EQ(detectFormat(bytes.data(), bytes.size()), AudioFileFormat::Mp3);
+
+    RetVal<IAudioDecoderPtr> decoder = makeDecoder(bytes.data(), bytes.size());
+    ASSERT_TRUE(decoder.ret) << decoder.ret.text();
+    EXPECT_EQ(decoder.val->info().channels, 1u);
+
+    RetVal<PcmAudio> pcm = decodeAll(*decoder.val);
+    ASSERT_TRUE(pcm.ret) << pcm.ret.text();
+    EXPECT_EQ(pcm.val.channels, 1u);
+    // Both parts are there (without a gapless tag each part keeps its encoder delay and padding)
+    EXPECT_GT(pcm.val.frames(), 2u * 9000u);
+    EXPECT_LT(pcm.val.frames(), 2u * 9600u + 4u * 1152u);
 }

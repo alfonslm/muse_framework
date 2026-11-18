@@ -33,7 +33,7 @@ namespace muse::audio::codec {
 //!   touches the file system.
 //! - open() accepts only FLAC and Ogg with Vorbis or Opus inside (SF_FORMAT_FLAC,
 //!   SF_FORMAT_OGG|SF_FORMAT_VORBIS, SF_FORMAT_OGG|SF_FORMAT_OPUS), whatever else libsndfile could
-//!   read: the list of formats is FontDaw's, not the library's.
+//!   read: the list of formats is this decoder's, not the library's.
 //! - Samples are read as normalised floats (sf_readf_float, SFC_SET_NORM_FLOAT on), so FLAC
 //!   decodes bit-exactly to what WavDecoder gives for the same samples in a WAV file.
 //! - Opus: libsndfile removes the pre-skip and the end padding given by the granule positions;
@@ -57,7 +57,8 @@ public:
     bool seek(samples_t frame) override;
     Ret error() const override;
 
-    //! The bytes libsndfile reads through its virtual I/O callbacks
+    //! The bytes libsndfile reads through its virtual I/O callbacks. `data` is the caller's (see
+    //! IAudioDecoder::open) and must outlive the decoder: it is read on every readFrames() and seek().
     struct Memory {
         const uint8_t* data = nullptr;
         size_t size = 0;

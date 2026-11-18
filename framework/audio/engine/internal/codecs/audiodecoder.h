@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -34,20 +35,22 @@
 #include "wavdecoder.h"
 
 namespace muse::audio::codec {
-//! The decoder seam (FontDaw, FRAMEWORK_CHANGES F1 step 2 and F4)
-//! ===========================================================
-//! Everything FontDaw decodes for a clip goes through IAudioDecoder: the engine for playback, and
-//! the app for its import checks and waveform peaks, so the two cannot disagree on whether a file
-//! is usable or how long it is (FD-050). Formats (Batch 2 workstream 04):
-//! - WAV: WavAudioDecoder, FontDaw's own parser (wavdecoder.h);
+//! The decoder seam for audio clips
+//! =================================
+//! Everything decoded for an audio clip goes through IAudioDecoder: the engine for playback, and an
+//! application that shows the audio (import checks, waveform overviews) can link this library and
+//! use the same code, so the two cannot disagree on whether a file is usable or how long it is.
+//! Formats:
+//! - WAV: WavAudioDecoder (wavdecoder.h);
 //! - FLAC, Ogg Vorbis, Ogg Opus: SndFileAudioDecoder (libsndfile);
-//! - MP3: Mp3AudioDecoder (libmpg123; libsndfile's own MP3 support is built off in muse_deps).
-//! 01b changes when and on which thread it is called.
+//! - MP3: Mp3AudioDecoder (libmpg123; libsndfile's own MP3 support is not built in the libsndfile used).
 //!
-//! A decoder works on bytes that are already in memory and never touches the file system. The
-//! bytes come from project files and from files the user picked, so they are untrusted: each
-//! implementation checks its input, and makeDecoder() refuses what no decoder recognises and
-//! streams whose channels or sample rate are out of range (the limits of WavDecoder).
+//! A decoder works on bytes that are already in memory and never touches the file system; the
+//! bytes passed to open() stay the caller's and must outlive the decoder, which reads them on
+//! every readFrames() and seek(). The bytes come from project files and from files the user
+//! picked, so they are untrusted: each implementation checks its input, makeDecoder() refuses what
+//! no decoder recognises and streams whose channels or sample rate are out of range (the limits of
+//! WavDecoder), and decodeAll() limits how much decoded audio is held (DecodedAudioBudget).
 
 struct AudioStreamInfo {
     sample_rate_t sampleRate = 0;
@@ -101,18 +104,56 @@ using IAudioDecoderPtr = std::unique_ptr<IAudioDecoder>;
 //! A decoder that recognises `data` (by content, not by file name), already opened; or an error
 RetVal<IAudioDecoderPtr> makeDecoder(const uint8_t* data, size_t size);
 
-//! Called by readAll() with each block of interleaved frames, in order
-using AudioBlockHandler = std::function<void (const float* interleaved, samples_t frames)>;
+//! The longest source readAll() and decodeAll() take, in seconds at the source's own rate (and
+//! never more than their maxSamples)
+inline constexpr size_t MAX_DECODED_SECONDS = 2 * 60 * 60;
+
+//! Called by readAll() with each block of interleaved frames, in order. Returning false stops the
+//! read: readAll() then returns an error.
+using AudioBlockHandler = std::function<bool (const float* interleaved, samples_t frames)>;
 
 //! Reads a decoder from its start to its end in blocks of `blockFrames` frames (the last one may be
 //! shorter) and hands each to `onBlock`. Refuses audio longer than maxSamples (all channels
-//! together): before reading when info().frames already says so, and while reading for formats
-//! whose header does not give the length. Refuses audio the decoder finds damaged and audio with
+//! together) or MAX_DECODED_SECONDS: before reading when info().frames already says so, and while
+//! reading for formats whose header does not give the length. Refuses audio the decoder finds damaged and audio with
 //! no frames. Returns the frames read.
-//! The one loop every user of decoded audio goes through (decodeAll, the app's import and peaks).
+//! The one loop every user of decoded audio goes through (decodeAll, and callers that only look at the
+//! audio, such as an import check or a waveform overview).
 RetVal<samples_t> readAll(IAudioDecoder& decoder, const AudioBlockHandler& onBlock,
                           size_t maxSamples = WavDecoder::MAX_SAMPLES, samples_t blockFrames = 4096);
 
-//! Decodes everything a decoder has (readAll into one buffer)
-RetVal<PcmAudio> decodeAll(IAudioDecoder& decoder, size_t maxSamples = WavDecoder::MAX_SAMPLES);
+//! How much decoded clip audio may be held in memory at once, across every source decodeAll() has
+//! decoded and that is still alive (PcmAudio::budgetLease gives its share back). A compressed file
+//! can expand by a factor of thousands (a FLAC of silence: 151 KB for 528 million frames), so the
+//! per-source length cap alone does not bound memory, and a project can hold many sources.
+//! Thread-safe. Holding whole sources in memory is a stopgap until clips stream from their bytes.
+class DecodedAudioBudget
+{
+public:
+    //! 2^30 floats (4 GiB) in all
+    static constexpr size_t DEFAULT_MAX_SAMPLES = size_t(1) << 30;
+
+    explicit DecodedAudioBudget(size_t maxSamples = DEFAULT_MAX_SAMPLES);
+
+    //! The budget decodeAll() uses unless it is given another
+    static DecodedAudioBudget& global();
+
+    //! Takes `samples` from the budget if they fit
+    bool tryAcquire(size_t samples);
+    void release(size_t samples);
+
+    size_t used() const;
+    size_t maxSamples() const;
+
+private:
+    const size_t m_maxSamples;
+    std::atomic<size_t> m_used { 0 };
+};
+
+//! Decodes everything a decoder has (readAll into one buffer). Refuses, without a crash: what
+//! readAll() refuses, audio that does not fit in what is left of
+//! `budget`, and an allocation that fails. The result holds its share of `budget` until the last
+//! copy of it is destroyed.
+RetVal<PcmAudio> decodeAll(IAudioDecoder& decoder, size_t maxSamples = WavDecoder::MAX_SAMPLES,
+                           DecodedAudioBudget& budget = DecodedAudioBudget::global());
 }

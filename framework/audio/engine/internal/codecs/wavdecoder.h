@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "global/types/retval.h"
@@ -35,6 +36,10 @@ struct PcmAudio {
     sample_rate_t sampleRate = 0;
     audioch_t channels = 0;
     std::vector<float> samples;
+
+    //! The share of the decoded-audio budget these samples hold (set by decodeAll, see
+    //! DecodedAudioBudget); given back when the last copy of this audio is destroyed
+    std::shared_ptr<const void> budgetLease;
 
     samples_t frames() const
     {

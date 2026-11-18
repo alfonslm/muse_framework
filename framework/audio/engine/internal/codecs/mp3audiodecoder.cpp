@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <mutex>
 
 #include <mpg123.h>
@@ -174,19 +175,28 @@ Ret Mp3AudioDecoder::open(const uint8_t* data, size_t size)
         return mp3Error("unsupported MP3 format");
     }
 
+    // From here on, only the first frame's channel count: mpg123 then converts a later mono frame
+    // to stereo (or the other way) instead of reporting a new format. A change of sample rate
+    // inside the stream still comes back as a new format and is refused as damage in
+    // readFrames(): playing it would need resampling part way through the clip.
+    mpg123_format_none(m_handle);
+    for (size_t i = 0; i < rateCount; ++i) {
+        mpg123_format(m_handle, rates[i], channels == 1 ? MPG123_MONO : MPG123_STEREO, MPG123_ENC_FLOAT_32);
+    }
+
     if (mpg123_scan(m_handle) != MPG123_OK) {
         close();
         return mp3Error("cannot scan the MP3 data");
     }
 
-    const auto length = mpg123_length(m_handle);
+    const int64_t length = mpg123_length64(m_handle);
     if (length <= 0) {
         close();
         return mp3Error("MP3 without audio");
     }
 
     // The scan may have found a different first format; the stream's format is the first one
-    if (mpg123_seek(m_handle, 0, SEEK_SET) < 0) {
+    if (mpg123_seek64(m_handle, 0, SEEK_SET) < 0) {
         close();
         return mp3Error("cannot read the MP3 data");
     }
@@ -278,7 +288,7 @@ bool Mp3AudioDecoder::seek(samples_t frame)
         return false;
     }
 
-    const auto result = mpg123_seek(m_handle, static_cast<decltype(mpg123_seek(m_handle, 0, 0))>(frame), SEEK_SET);
+    const int64_t result = mpg123_seek64(m_handle, static_cast<int64_t>(frame), SEEK_SET);
     if (result < 0) {
         return false;
     }

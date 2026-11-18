@@ -38,8 +38,8 @@ if (OS_IS_WIN AND MUSE_MODULE_AUDIO)
 endif()
 
 if (MUSE_MODULE_AUDIO)
-    # FontDaw: decoders for audio clips (engine/internal/codecs, FRAMEWORK_CHANGES F4).
-    # libsndfile reads FLAC, Ogg Vorbis and Ogg Opus; it is built without MPEG, so mpg123 reads MP3
+    # Decoders for audio clips (engine/internal/codecs). libsndfile reads FLAC, Ogg Vorbis and
+    # Ogg Opus; it is built without MPEG, so mpg123 reads MP3
     require_dep(ogg)
     require_dep(vorbis)
     require_dep(flac)

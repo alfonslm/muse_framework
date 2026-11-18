@@ -22,10 +22,11 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
 
-// pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init (FD-040).
+// pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init.
 #pragma pack(push, 1)
 #include "audio/common/audiotypes.h"
 #pragma pack(pop)
@@ -254,9 +255,8 @@ TEST_F(Audio_SndFileAudioDecoderTests, DamagedInput)
     const std::vector<uint8_t> flac = readCodecTestFile("reference.flac");
     const std::vector<uint8_t> half = truncated(flac, flac.size() / 2);
     RetVal<IAudioDecoderPtr> decoder = makeDecoder(half.data(), half.size());
-    if (decoder.ret) {
-        EXPECT_FALSE(decodeAll(*decoder.val).ret);
-    }
+    ASSERT_TRUE(decoder.ret) << "the header is whole, so the file opens";
+    EXPECT_FALSE(decodeAll(*decoder.val).ret) << "and the shortfall is found while reading";
 }
 
 TEST_F(Audio_SndFileAudioDecoderTests, FlacHugeTotalIsRefused)
@@ -268,12 +268,15 @@ TEST_F(Audio_SndFileAudioDecoderTests, FlacHugeTotalIsRefused)
     flac[8 + 14] = flac[8 + 15] = flac[8 + 16] = flac[8 + 17] = 0xFF;
 
     RetVal<IAudioDecoderPtr> decoder = makeDecoder(flac.data(), flac.size());
-    if (decoder.ret) {
-        EXPECT_FALSE(decodeAll(*decoder.val).ret);
-        RetVal<IAudioDecoderPtr> again = makeDecoder(flac.data(), flac.size());
-        ASSERT_TRUE(again.ret);
-        EXPECT_FALSE(readAll(*again.val, nullptr).ret);
-    }
+    ASSERT_TRUE(decoder.ret) << "the header is valid, it only lies about the length";
+    EXPECT_FALSE(decodeAll(*decoder.val).ret);
+
+    // Refused before a single block is read
+    RetVal<IAudioDecoderPtr> again = makeDecoder(flac.data(), flac.size());
+    ASSERT_TRUE(again.ret);
+    int blocks = 0;
+    EXPECT_FALSE(readAll(*again.val, [&blocks](const float*, samples_t) { ++blocks; return true; }).ret);
+    EXPECT_EQ(blocks, 0);
 
     // The intact file with a small limit
     const std::vector<uint8_t> intact = readCodecTestFile("reference.flac");
@@ -310,4 +313,93 @@ TEST_F(Audio_SndFileAudioDecoderTests, ThreadsDecodeIndependently)
         EXPECT_EQ(results[i].audio.samples.size(), ref.audio.samples.size()) << i;
         EXPECT_EQ(maxDifference(ref.audio.samples, results[i].audio.samples), 0.f) << i;
     }
+}
+
+namespace {
+//! reference.flac with its STREAMINFO total samples set to `total` (36 bits)
+std::vector<uint8_t> flacWithTotal(uint64_t total)
+{
+    std::vector<uint8_t> flac = readCodecTestFile("reference.flac");
+    EXPECT_GT(flac.size(), 8u + 18u);
+    // STREAMINFO starts at byte 8; the total is the low 4 bits of byte 13 and bytes 14..17
+    flac[8 + 13] = static_cast<uint8_t>((flac[8 + 13] & 0xF0) | ((total >> 32) & 0x0F));
+    flac[8 + 14] = static_cast<uint8_t>(total >> 24);
+    flac[8 + 15] = static_cast<uint8_t>(total >> 16);
+    flac[8 + 16] = static_cast<uint8_t>(total >> 8);
+    flac[8 + 17] = static_cast<uint8_t>(total);
+    return flac;
+}
+}
+
+TEST_F(Audio_SndFileAudioDecoderTests, FlacLongerThanTheDurationCapIsRefusedBeforeReading)
+{
+    // 3 hours at 48 kHz stereo: under the 2^30-float cap, over MAX_DECODED_SECONDS (2 hours)
+    const std::vector<uint8_t> flac = flacWithTotal(uint64_t(3) * 3600 * 48000);
+    RetVal<IAudioDecoderPtr> decoder = makeDecoder(flac.data(), flac.size());
+    ASSERT_TRUE(decoder.ret);
+    int blocks = 0;
+    EXPECT_FALSE(readAll(*decoder.val, [&blocks](const float*, samples_t) { ++blocks; return true; }).ret);
+    EXPECT_EQ(blocks, 0);
+}
+
+TEST_F(Audio_SndFileAudioDecoderTests, FlacWithUnknownTotalIsReadToItsEnd)
+{
+    // A STREAMINFO total of 0 means "unknown" (a stream written live): the decoder reads to the end
+    const std::vector<uint8_t> flac = flacWithTotal(0);
+    RetVal<IAudioDecoderPtr> decoder = makeDecoder(flac.data(), flac.size());
+    ASSERT_TRUE(decoder.ret) << decoder.ret.text();
+    EXPECT_EQ(decoder.val->info().frames, 0u);
+
+    RetVal<PcmAudio> pcm = decodeAll(*decoder.val);
+    ASSERT_TRUE(pcm.ret) << pcm.ret.text();
+    const Decoded ref = decodeFile(readCodecTestFile("reference.wav"));
+    ASSERT_TRUE(ref.ok);
+    EXPECT_EQ(pcm.val.frames(), ref.audio.frames());
+    EXPECT_EQ(maxDifference(ref.audio.samples, pcm.val.samples), 0.f);
+}
+
+TEST_F(Audio_SndFileAudioDecoderTests, OggWithALyingLastGranuleDoesNotCrashOrOverread)
+{
+    // The length of an Ogg stream comes from its last page's granule position: make it lie, both
+    // huge and small, for Vorbis and Opus
+    for (const char* name : { "reference.ogg", "reference.opus" }) {
+        const std::vector<uint8_t> original = readCodecTestFile(name);
+        size_t lastPage = std::string::npos;
+        for (size_t i = 0; i + 27 <= original.size(); ++i) {
+            if (std::memcmp(original.data() + i, "OggS", 4) == 0) {
+                lastPage = i;
+            }
+        }
+        ASSERT_NE(lastPage, std::string::npos) << name;
+
+        for (uint64_t granule : { uint64_t(1) << 62, uint64_t(1000), uint64_t(0) }) {
+            std::vector<uint8_t> bytes = original;
+            for (int b = 0; b < 8; ++b) {
+                bytes[lastPage + 6 + b] = static_cast<uint8_t>(granule >> (8 * b));
+            }
+            RetVal<IAudioDecoderPtr> decoder = makeDecoder(bytes.data(), bytes.size());
+            if (!decoder.ret) {
+                continue; // refused on open: fine
+            }
+            RetVal<PcmAudio> pcm = decodeAll(*decoder.val);
+            if (pcm.ret) {
+                // Whatever the page says, never more audio than the stream holds (plus one packet)
+                EXPECT_LE(pcm.val.frames(), 24000u + 5760u) << name << " granule " << granule;
+            }
+        }
+    }
+}
+
+TEST_F(Audio_SndFileAudioDecoderTests, MoreThanTwoChannelsAreDecoded)
+{
+    const std::vector<uint8_t> flac = readCodecTestFile("sixchannels.flac");
+    RetVal<IAudioDecoderPtr> decoder = makeDecoder(flac.data(), flac.size());
+    ASSERT_TRUE(decoder.ret) << decoder.ret.text();
+    EXPECT_EQ(decoder.val->info().channels, 6u);
+    EXPECT_EQ(decoder.val->info().sampleRate, 48000u);
+
+    RetVal<PcmAudio> pcm = decodeAll(*decoder.val);
+    ASSERT_TRUE(pcm.ret);
+    EXPECT_EQ(pcm.val.channels, 6u);
+    EXPECT_EQ(pcm.val.frames(), 4800u);
 }

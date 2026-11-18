@@ -17,8 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# The decoders for audio clips (FRAMEWORK_CHANGES F4), in a library of their own so that the
-# engine (playback) and the app (import checks, waveform peaks) decode with the same code (FD-050).
+# The decoders for audio clips, in a library of their own so that the engine (playback) and an
+# application that shows the audio (import checks, waveform overviews) decode with the same code.
 # vorbisdecoder.* (SoundFonts) stays in the engine.
 
 muse_create_module(muse_audio_codecs NO_QT NO_PCH NO_UNITY) # each decoder has its own file-local helpers

@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 // pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init (FD-040).
@@ -161,4 +162,46 @@ TEST(Audio_AudioDecoderTests, DecodeAllRefusesTooLongAudio)
 
     EXPECT_FALSE(decodeAll(*decoder.val, 199).ret);
     EXPECT_TRUE(decodeAll(*decoder.val, 200).ret);
+}
+
+TEST(Audio_AudioDecoderTests, DecodeAllStaysWithinTheBudgetAndGivesItBack)
+{
+    const std::vector<uint8_t> wav = makeWav(44100, 2, 16, false, testSamples(1000, 2)); // 2000 samples
+
+    DecodedAudioBudget budget(3000);
+    {
+        RetVal<IAudioDecoderPtr> first = makeDecoder(wav.data(), wav.size());
+        ASSERT_TRUE(first.ret);
+        RetVal<PcmAudio> a = decodeAll(*first.val, WavDecoder::MAX_SAMPLES, budget);
+        ASSERT_TRUE(a.ret);
+        EXPECT_EQ(budget.used(), 2000u);
+
+        // A second source does not fit while the first is held
+        RetVal<IAudioDecoderPtr> second = makeDecoder(wav.data(), wav.size());
+        ASSERT_TRUE(second.ret);
+        EXPECT_FALSE(decodeAll(*second.val, WavDecoder::MAX_SAMPLES, budget).ret);
+        EXPECT_EQ(budget.used(), 2000u) << "a refused decode keeps nothing";
+
+        // Copies share one lease: the budget is given back when the last one goes
+        std::shared_ptr<const PcmAudio> shared = std::make_shared<const PcmAudio>(std::move(a.val));
+        PcmAudio copy = *shared;
+        shared.reset();
+        EXPECT_EQ(budget.used(), 2000u);
+    }
+    EXPECT_EQ(budget.used(), 0u);
+
+    // Once it is given back, the same source fits again
+    RetVal<IAudioDecoderPtr> third = makeDecoder(wav.data(), wav.size());
+    ASSERT_TRUE(third.ret);
+    EXPECT_TRUE(decodeAll(*third.val, WavDecoder::MAX_SAMPLES, budget).ret);
+}
+
+TEST(Audio_AudioDecoderTests, ReadAllStopsWhenTheHandlerSaysSo)
+{
+    const std::vector<uint8_t> wav = makeWav(44100, 1, 16, false, testSamples(10000, 1));
+    RetVal<IAudioDecoderPtr> decoder = makeDecoder(wav.data(), wav.size());
+    ASSERT_TRUE(decoder.ret);
+    int blocks = 0;
+    EXPECT_FALSE(readAll(*decoder.val, [&blocks](const float*, samples_t) { return ++blocks < 2; }).ret);
+    EXPECT_EQ(blocks, 2);
 }

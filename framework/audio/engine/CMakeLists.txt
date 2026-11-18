@@ -202,7 +202,7 @@ else()
     add_subdirectory(../thirdparty/fluidsynth fluidsynth)
     target_link_libraries(muse_audio_engine PRIVATE fluidsynth)
 
-    # FontDaw: the clip decoders, shared with the app (FRAMEWORK_CHANGES F4, FD-050)
+    # The clip decoders, a library an application can link too
     add_subdirectory(internal/codecs)
     target_link_libraries(muse_audio_engine PRIVATE muse_audio_codecs)
 endif() # End of real engine
