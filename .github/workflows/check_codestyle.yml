@@ -1,7 +1,7 @@
 name: 'Check: Codestyle'
 
 on:
-  pull_request:
+  # FontDaw: manual only until a self-hosted runner exists; at an upstream catch-up keep this side
   workflow_dispatch:
 
 jobs:

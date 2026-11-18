@@ -1,7 +1,7 @@
 name: 'Check: Unit Tests (utest)'
 
 on:
-  pull_request:
+  # FontDaw: manual only until a self-hosted runner exists; at an upstream catch-up keep this side
   workflow_dispatch:
     inputs:
       code_coverage:
@@ -9,8 +9,6 @@ on:
         required: false
         type: boolean
         default: false
-  schedule:
-    - cron: "0 3 * * 4" # Every Thursday night at 03:00 for master branch
 
 concurrency:
   group: ${{ github.workflow }} ${{ github.event_name }} ${{ github.ref }}
