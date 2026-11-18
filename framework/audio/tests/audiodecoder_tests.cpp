@@ -24,19 +24,11 @@
 #include <algorithm>
 #include <vector>
 
-// pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init (FD-040).
-#pragma pack(push, 1)
 #include "audio/common/audiotypes.h"
-#pragma pack(pop)
 
 #include "audio/engine/internal/codecs/audiodecoder.h"
 
 #include "wavtestutils.h"
-
-//! NOTE The units under test are compiled into this file: this test binary does not link the audio engine.
-//! wavdecoder.cpp is already compiled into wavdecoder_tests.cpp of the same binary, so it is not included here.
-#include "audio/engine/internal/codecs/wavaudiodecoder.cpp"
-#include "audio/engine/internal/codecs/audiodecoder.cpp"
 
 using namespace muse;
 using namespace muse::audio;
