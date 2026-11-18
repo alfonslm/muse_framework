@@ -162,12 +162,6 @@ else()
         # codecs
         internal/codecs/vorbisdecoder.cpp
         internal/codecs/vorbisdecoder.h
-        internal/codecs/wavdecoder.cpp
-        internal/codecs/wavdecoder.h
-        internal/codecs/wavaudiodecoder.cpp
-        internal/codecs/wavaudiodecoder.h
-        internal/codecs/audiodecoder.cpp
-        internal/codecs/audiodecoder.h
     )
 
     # vorbisdecoder.cpp includes stb_vorbis.c, which defines short macros (L, C, R)
@@ -207,6 +201,10 @@ else()
 
     add_subdirectory(../thirdparty/fluidsynth fluidsynth)
     target_link_libraries(muse_audio_engine PRIVATE fluidsynth)
+
+    # The clip decoders, a library an application can link too
+    add_subdirectory(internal/codecs)
+    target_link_libraries(muse_audio_engine PRIVATE muse_audio_codecs)
 endif() # End of real engine
 
 if (MUSE_MODULE_AUDIO_EXPORT)

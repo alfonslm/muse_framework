@@ -37,6 +37,17 @@ if (OS_IS_WIN AND MUSE_MODULE_AUDIO)
     require_source_dep(asiosdk)
 endif()
 
+if (MUSE_MODULE_AUDIO)
+    # Decoders for audio clips (engine/internal/codecs). libsndfile reads FLAC, Ogg Vorbis and
+    # Ogg Opus; it is built without MPEG, so mpg123 reads MP3
+    require_dep(ogg)
+    require_dep(vorbis)
+    require_dep(flac)
+    require_dep(opus)
+    require_dep(libsndfile)
+    require_dep(mpg123)
+endif()
+
 if (MUSE_MODULE_AUDIO AND MUSE_MODULE_AUDIO_EXPORT)
     require_dep(ogg) # flac and opusenc link against ogg
     require_dep(fdk-aac)
