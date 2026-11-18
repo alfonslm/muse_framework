@@ -138,7 +138,7 @@ static double valueAtX(const QVector<QPointF>& sortedPoints, double x)
 }
 
 PolylinePlot::PolylinePlot(QQuickItem* parent)
-    : QQuickPaintedItem(parent), muse::Contextable(muse::iocCtxForQmlObject(this))
+    : QQuickPaintedItem(parent)
 {
     setAcceptHoverEvents(true);
     setAcceptedMouseButtons(Qt::LeftButton);
@@ -162,17 +162,10 @@ PolylinePlot::PolylinePlot(QQuickItem* parent)
     });
 }
 
-void PolylinePlot::init()
+void PolylinePlot::cancelEdit()
 {
-    dispatcher()->reg(this, "action://cancel", [this](){
-        // emit signal and let decide model what to do
-        emit dragCancelled();
-        // Qt suppresses hover events while a mouse button is held, so the
-        // ghost-point preview would otherwise stay painted at the press
-        // position until the user releases and moves the mouse.
-        m_hoveredOnLine = false;
-        resetGestureState();
-    });
+    m_hoveredOnLine = false;
+    resetGestureState();
 }
 
 PolylinePointStyle* PolylinePlot::standardPointStyle()
@@ -422,6 +415,70 @@ void PolylinePlot::setColorsUnderLine(const QVector<QColor>& c)
     emit colorsUnderLineChanged();
 
     update();
+}
+
+qreal PolylinePlot::leftEdgeValue() const
+{
+    if (!m_leftEdgeValue.has_value()) {
+        return 0.0;
+    }
+    return m_leftEdgeValue.value();
+}
+
+void PolylinePlot::setLeftEdgeValue(qreal v)
+{
+    if (m_leftEdgeValue == v) {
+        return;
+    }
+
+    m_leftEdgeValue = v;
+    emit leftEdgeValueChanged();
+
+    rebuildVisiblePoints();
+}
+
+void PolylinePlot::resetLeftEdgeValue()
+{
+    if (!m_leftEdgeValue.has_value()) {
+        return;
+    }
+
+    m_leftEdgeValue.reset();
+    emit leftEdgeValueChanged();
+
+    rebuildVisiblePoints();
+}
+
+qreal PolylinePlot::rightEdgeValue() const
+{
+    if (!m_rightEdgeValue.has_value()) {
+        return 0.0;
+    }
+    return m_rightEdgeValue.value();
+}
+
+void PolylinePlot::setRightEdgeValue(qreal v)
+{
+    if (m_rightEdgeValue == v) {
+        return;
+    }
+
+    m_rightEdgeValue = v;
+    emit rightEdgeValueChanged();
+
+    rebuildVisiblePoints();
+}
+
+void PolylinePlot::resetRightEdgeValue()
+{
+    if (!m_rightEdgeValue.has_value()) {
+        return;
+    }
+
+    m_rightEdgeValue.reset();
+    emit rightEdgeValueChanged();
+
+    rebuildVisiblePoints();
 }
 
 qreal PolylinePlot::defaultValue() const
@@ -843,8 +900,11 @@ void PolylinePlot::rebuildVisiblePoints()
 
     if (m_points.isEmpty()) {
         updateBaselineFromDefaultValue();
-        update();
-        return;
+        // with no points the line is flat on the baseline, unless there are edge values to draw it between
+        if (!m_leftEdgeValue && !m_rightEdgeValue) {
+            update();
+            return;
+        }
     }
 
     struct P {
@@ -878,8 +938,20 @@ void PolylinePlot::rebuildVisiblePoints()
     // Synthetic boundary points must be interpolated in rendered Y-space.
     // Interpolating in domain Y breaks continuity for split mappings
     // (e.g. segments crossing 0 dB split value).
-    const double yAt0N = valueAtX(sortedPointsN, m_xFrom);
-    const double yAt1N = valueAtX(sortedPointsN, m_xTo);
+
+    // An edge value overrides the value "natural" edge value (if set)...
+    auto edgeYN = [&](const std::optional<qreal>& edgeValue, const std::optional<qreal>& otherEdgeValue, double x) {
+        if (edgeValue.has_value()) {
+            return normY(edgeValue.value());
+        }
+        if (sortedPointsN.isEmpty()) {
+            return normY(otherEdgeValue.value());
+        }
+        return valueAtX(sortedPointsN, x);
+    };
+
+    const double yAt0N = edgeYN(m_leftEdgeValue, m_rightEdgeValue, m_xFrom);
+    const double yAt1N = edgeYN(m_rightEdgeValue, m_leftEdgeValue, m_xTo);
 
     // NOTE: synthetic boundary points are added just outside the visible range
     // so the polyline draws correctly: they allow horizontal segments

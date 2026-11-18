@@ -24,10 +24,7 @@
 #include <cstring>
 #include <vector>
 
-// pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init.
-#pragma pack(push, 1)
 #include "audio/common/audiotypes.h"
-#pragma pack(pop)
 
 #include "audio/engine/internal/codecs/wavdecoder.h"
 

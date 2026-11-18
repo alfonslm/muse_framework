@@ -132,9 +132,11 @@ inline float sourceSample(const codec::PcmAudio& audio, samples_t frame, audioch
     return outChannel < channels ? data[outChannel] : 0.f;
 }
 
+}
+
 //! Adds one output frame, taken at `sourcePos` (in frames of the source), to `out`
-void renderResampledFrame(const codec::PcmAudio& audio, samples_t frames, sample_rate_t outSampleRate, double sourcePos, float* out,
-                          audioch_t outChannelCount)
+void muse::audio::engine::renderResampledFrame(const codec::PcmAudio& audio, samples_t frames, sample_rate_t outSampleRate,
+                                               double sourcePos, float* out, audioch_t outChannelCount)
 {
     //! NOTE When the output rate is lower than the source's, the kernel is stretched
     //! so it also removes what the output rate cannot represent
@@ -158,7 +160,6 @@ void renderResampledFrame(const codec::PcmAudio& audio, samples_t frames, sample
             out[ch] += weight * sourceSample(audio, frame, ch, outChannelCount);
         }
     }
-}
 }
 
 ClipAudioNode::ClipAudioNode(Sources sources, const AudioClipList& clips)

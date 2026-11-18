@@ -24,11 +24,9 @@
 #include <cstdint>
 
 //! The three audio integer types the clip decoders use, declared exactly as in
-//! audio/common/audiotypes.h (repeating an alias of the same type is allowed).
-//! The codecs do not include audiotypes.h: muse_audio_tests includes that header under
-//! `#pragma pack(1)` (as rpcpacker_tests.cpp needs), and its static map would then exist in two
-//! layouts in one binary, one from the codecs library and one from the tests, which crashes
-//! before main. Keep these three identical to audiotypes.h.
+//! audio/common/audiotypes.h (repeating an alias of the same type is allowed). The decoders need
+//! nothing else from that header, which pulls in much of the framework; an application that links
+//! only this library gets these three. Keep them identical to audiotypes.h.
 namespace muse::audio {
 using samples_t = uint64_t;
 using sample_rate_t = uint64_t;

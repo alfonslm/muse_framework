@@ -58,7 +58,7 @@ void Player::init()
             }
 
             if (ret) {
-                channel()->addReceiveStream(StreamName::PlaybackStatusStream, streamId, m_playbackStatusChanged);
+                channel()->addReceiveStream(ctxId(), StreamName::PlaybackStatusStream, streamId, m_playbackStatusChanged);
                 //! NOTE Send initial state
                 m_playbackStatusChanged.send(status);
             } else {
@@ -83,7 +83,7 @@ void Player::init()
             }
 
             if (ret) {
-                channel()->addReceiveStream(StreamName::PlaybackPositionStream, streamId, m_playbackPositionChanged);
+                channel()->addReceiveStream(ctxId(), StreamName::PlaybackPositionStream, streamId, m_playbackPositionChanged);
                 //! NOTE Send initial state
                 m_playbackPositionChanged.send(pos);
             } else {
@@ -104,7 +104,7 @@ void Player::init()
             }
 
             if (ret) {
-                channel()->addReceiveStream(StreamName::PlaybackPositionAnchorStream, streamId, m_playbackPositionAnchorChanged);
+                channel()->addReceiveStream(ctxId(), StreamName::PlaybackPositionAnchorStream, streamId, m_playbackPositionAnchorChanged);
                 //! NOTE Send initial state
                 m_playbackPositionAnchorChanged.send(anchor);
             } else {
@@ -112,6 +112,14 @@ void Player::init()
             }
         });
     }
+}
+
+void Player::deinit()
+{
+    ONLY_AUDIO_MAIN_THREAD;
+
+    m_playbackStatusChanged.disconnect(this);
+    m_playbackPositionChanged.disconnect(this);
 }
 
 async::Promise<Ret> Player::prepareToPlay()

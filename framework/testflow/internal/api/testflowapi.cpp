@@ -55,16 +55,16 @@ void TestflowApi::runTestCase(const QJSValue& testCase)
 
 bool TestflowApi::pause(bool immediately)
 {
-    if (immediately) {
-        IInteractive::Result res = interactive()->questionSync("Pause", "Continue?",
-                                                               { IInteractive::Button::Continue, IInteractive::Button::Abort });
-
-        if (res.standardButton() == IInteractive::Button::Abort) {
-            abort();
-            return false;
-        }
-
+    if (!testflow()->isInteractive()) {
+        LOGW() << "[testflow] non-interactive run, pause skipped";
         return true;
+    }
+
+    if (immediately) {
+        return askAndWait("Pause", "Continue?", {
+            interactive()->buttonData(IInteractive::Button::Continue),
+            interactive()->buttonData(IInteractive::Button::Abort)
+        }) == int(IInteractive::Button::Continue);
     }
 
     testflow()->pause();
@@ -73,24 +73,47 @@ bool TestflowApi::pause(bool immediately)
 
 bool TestflowApi::confirm(const QString& msg)
 {
-    int pauseBtn = int(IInteractive::Button::CustomButton) + 1;
-    IInteractive::Result res = interactive()->questionSync("Confirm", msg.toStdString(), {
+    if (!testflow()->isInteractive()) {
+        LOGW() << "[testflow] non-interactive run, confirm skipped: " << msg;
+        return true;
+    }
+
+    return askAndWait("Confirm", msg.toStdString(), {
         interactive()->buttonData(IInteractive::Button::Continue),
-        IInteractive::ButtonData(pauseBtn, "Pause"),
+        IInteractive::ButtonData(PAUSE_BTN, "Pause"),
         interactive()->buttonData(IInteractive::Button::Abort)
+    }) == int(IInteractive::Button::Continue);
+}
+
+int TestflowApi::askAndWait(const std::string& title, const std::string& text, const IInteractive::ButtonDatas& buttons)
+{
+    //! NOTE The step is paused while the question is asked,
+    //! and sleeps until the answer unpauses it (the same as when the user pauses it during a sleep)
+    testflow()->pause();
+
+    auto answer = std::make_shared<int>(int(IInteractive::Button::NoButton));
+
+    interactive()->question(title, text, buttons)
+    .onResolve(this, [this, answer](const IInteractive::Result& res) {
+        if (res.standardButton() == IInteractive::Button::Abort) {
+            *answer = int(IInteractive::Button::Abort);
+            abort();
+            return;
+        }
+
+        if (res.button() == PAUSE_BTN) {
+            //! NOTE The step stays paused until the test case is unpaused
+            *answer = PAUSE_BTN;
+            return;
+        }
+
+        *answer = int(IInteractive::Button::Continue);
+        testflow()->unpause();
     });
 
-    if (res.standardButton() == IInteractive::Button::Abort) {
-        abort();
-        return false;
-    }
+    testflow()->sleep(-1); // sleeps while paused
 
-    if (res.button() == pauseBtn) {
-        pause();
-        return false;
-    }
-
-    return true;
+    return *answer;
 }
 
 void TestflowApi::abort()
@@ -101,6 +124,11 @@ void TestflowApi::abort()
 void TestflowApi::error(const QString& msg)
 {
     testflow()->fatal(msg);
+}
+
+void TestflowApi::expectQuit(int timeoutMsec)
+{
+    testflow()->expectQuit(timeoutMsec);
 }
 
 void TestflowApi::fatal(const QString& msg)
@@ -128,9 +156,22 @@ bool TestflowApi::openProject(const QString& name)
         return false;
     }
 
-    dispatcher()->dispatch("file-open", ActionData::make_arg1<QUrl>(QUrl::fromLocalFile(filePath.toQString())));
+    rcommand::Params params;
+    params["url"] = Val(QUrl::fromLocalFile(filePath.toQString()).toString());
+    params["display_name"] = Val(std::string());
+    commandDispatcher()->dispatch(rcommand::make_request(rcommand::Command("command://project/open"), params));
 
     return true;
+}
+
+bool TestflowApi::isCommandEnabled(const QString& command) const
+{
+    return commandsState() ? commandsState()->commandState(rcommand::Command(command.toStdString())).enabled : false;
+}
+
+bool TestflowApi::isCommandChecked(const QString& command) const
+{
+    return commandsState() ? commandsState()->commandState(rcommand::Command(command.toStdString())).checked : false;
 }
 
 void TestflowApi::saveProject(const QString& name)
@@ -143,7 +184,9 @@ void TestflowApi::saveProject(const QString& name)
 
     io::path_t filePath = dir + "/" + QDateTime::currentDateTime().toString("yyMMddhhmmss") + "_" + name;
 
-    dispatcher()->dispatch("file-save-at", ActionData::make_arg1<io::path_t>(filePath));
+    rcommand::Params params;
+    params["path"] = Val(filePath.toStdString());
+    commandDispatcher()->dispatch(rcommand::make_request(rcommand::Command("command://project/save-at"), params));
 }
 
 void TestflowApi::sleep(int msec)
@@ -200,5 +243,10 @@ QString TestflowApi::selectedFilePath() const
 
 void TestflowApi::showMainWindowOnFront()
 {
+    //! NOTE A non-interactive run must not take the focus from the user or from other runs in parallel
+    if (!testflow()->isInteractive()) {
+        return;
+    }
+
     mainWindow()->requestShowOnFront();
 }
