@@ -26,6 +26,8 @@
 #include "vstpluginprovider.h"
 #include "vsttrace.h"
 
+#include "pluginterfaces/vst/ivstaudioprocessor.h"
+
 #include "async/async.h"
 
 #include "defer.h"
@@ -110,6 +112,11 @@ const std::string& VstPluginInstance::name() const
     return m_resourceId;
 }
 
+std::optional<uint32_t> VstPluginInstance::processContextRequirements() const
+{
+    return m_processContextRequirements;
+}
+
 VstPluginInstanceId VstPluginInstance::id() const
 {
     return m_id;
@@ -167,6 +174,14 @@ void VstPluginInstance::load()
         if (!m_pluginProvider->init()) {
             LOGE() << "Unable to initialize vst plugin provider";
             return;
+        }
+
+        //! Asked once, after initialize and before the component is activated
+        if (PluginComponentPtr component = m_pluginProvider->component()) {
+            Steinberg::FUnknownPtr<Steinberg::Vst::IProcessContextRequirements> requirements(component);
+            if (requirements) {
+                m_processContextRequirements = requirements->getProcessContextRequirements();
+            }
         }
 
         PluginControllerPtr controller = m_pluginProvider->controller();

@@ -26,6 +26,7 @@
 
 #include "../ivstplugininstance.h"
 #include "../vsttypes.h"
+#include "vstprocesscontext.h"
 
 #include "modularity/ioc.h"
 #include "audio/common/musicaltimemap.h"
@@ -68,6 +69,13 @@ public:
     audio::samples_t process(float* output, audio::samples_t samplesPerChannel, audio::samples_t playbackPositionSamples = 0,
                              const audio::MusicalPosition& musicalPosition = audio::MusicalPosition(),
                              const VolumeGainChanges& volumeGainChanges = VolumeGainChanges());
+
+    //! The playback loop in quarter notes, told to the plugin as its cycle; cleared when there is none
+    void setCycle(double startQuarters, double endQuarters);
+    void clearCycle();
+
+    //! The engine's clocks for the next process() call (see transportClockAt() in vstprocesscontext.h)
+    void setTransportClock(const VstTransportInfo& clock);
 
     ParamsMapping paramsMapping(const std::set<Steinberg::Vst::CtrlNumber>& controllers) const;
 
@@ -127,6 +135,11 @@ private:
     audio::OutputSpec m_outputSpec;
 
     midiremote::IMMCDecoderPtr m_mmcDecoder;
+
+    bool m_hasCycle = false;
+    double m_cycleStartQuarters = 0.0;
+    double m_cycleEndQuarters = 0.0;
+    VstTransportInfo m_clock; // only the clock fields are used
 
     struct TraceState {
         std::string name;

@@ -21,6 +21,9 @@
  */
 #pragma once
 
+#include <cstdint>
+#include <optional>
+
 #include "global/async/notification.h"
 
 #include "vsttypes.h"
@@ -44,6 +47,10 @@ public:
     virtual PluginControllerPtr controller() const = 0;
     virtual PluginComponentPtr component() const = 0;
     virtual PluginMidiMappingPtr midiMapping() const = 0;
+
+    //! What the plugin says it needs in the process context (IProcessContextRequirements flags), asked
+    //! once after loading; none if it does not say
+    virtual std::optional<uint32_t> processContextRequirements() const = 0;
 
     virtual void updatePluginConfig(const muse::audio::AudioUnitConfig& config) = 0;
     virtual void refreshConfig() = 0;

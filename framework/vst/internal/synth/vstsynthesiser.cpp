@@ -24,6 +24,8 @@
 #include <algorithm>
 
 #include "keyswitchmapregistry.h"
+#include "../vstprocesscontext.h"
+
 #include "log.h"
 
 using namespace muse;
@@ -256,6 +258,20 @@ samples_t VstSynthesiser::process(float* buffer, samples_t samplesPerChannel)
             if (m_playheadPosition && m_currentPosition.isValid()) {
                 musicalPosition = m_playheadPosition->musicalPosition(m_currentPosition);
             }
+
+            double loopStart = 0.0;
+            double loopEnd = 0.0;
+            if (m_playheadPosition && loopInQuarters(*m_playheadPosition, m_outputSpec.sampleRate, loopStart, loopEnd)) {
+                m_vstAudioClient->setCycle(loopStart, loopEnd);
+            } else {
+                m_vstAudioClient->clearCycle();
+            }
+
+            VstTransportInfo clock;
+            if (m_playheadPosition) {
+                transportClockAt(*m_playheadPosition, segmentStart, static_cast<double>(m_outputSpec.sampleRate), clock);
+            }
+            m_vstAudioClient->setTransportClock(clock);
 
             processedSamples += m_vstAudioClient->process(buffer + segmentStart * m_outputSpec.audioChannelCount, segmentSamples,
                                                           m_currentPosition.samples(), musicalPosition, volumeGainChanges);

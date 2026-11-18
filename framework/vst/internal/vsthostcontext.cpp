@@ -21,6 +21,7 @@
 
 #include "vsthostcontext.h"
 
+#include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstpluginterfacesupport.h"
 #include "pluginterfaces/vst/ivstunits.h"
@@ -87,6 +88,9 @@ VstHostContext::VstHostContext()
         support->removePlugInterfaceSupported(IUnitData::iid);
         support->removePlugInterfaceSupported(IProgramListData::iid);
         support->removePlugInterfaceSupported(IEditController2::iid);
+
+        //! VstPluginInstance asks plugins for their process context requirements when they are loaded
+        support->addPlugInterfaceSupported(IProcessContextRequirements::iid);
     }
 }
 

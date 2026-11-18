@@ -84,6 +84,7 @@ void ContextPlayer::forward(const TimePosition& delta)
 
     //! Called once at the end of every processed block, playing or not
     m_processedBlocks.fetch_add(1, std::memory_order_release);
+    m_processedSamples.fetch_add(static_cast<int64_t>(delta.samples()), std::memory_order_relaxed);
 
     // Check: Active
     if (m_status.val != PlaybackStatus::Running) {
@@ -157,6 +158,23 @@ MusicalPosition ContextPlayer::musicalPosition(const TimePosition& position) con
 {
     const MusicalTimeMap* map = m_musicalTimeMapForProc.load(std::memory_order_acquire);
     return map ? map->positionAt(position.time().raw()) : MusicalPosition();
+}
+
+IPlayheadPosition::Loop ContextPlayer::loop() const
+{
+    //! NOTE Read by the processing thread, like in proc_onTimeChanged(); written by setLoop() and resetLoop()
+    //! while processing is held (ONLY_ON_OPERATION_EXEC)
+    return Loop { m_timeLoopStart.raw(), m_timeLoopEnd.raw() };
+}
+
+int64_t ContextPlayer::processedSamples() const
+{
+    return m_processedSamples.load(std::memory_order_relaxed);
+}
+
+int64_t ContextPlayer::blockPresentationTimeNs() const
+{
+    return m_processTiming ? m_processTiming->blockPresentationTimeNs() : 0;
 }
 
 void ContextPlayer::onTimeEvent(const TimeEvent event)
