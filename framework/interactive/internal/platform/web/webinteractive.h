@@ -32,6 +32,7 @@ public:
     ButtonData buttonData(Button b) const override;
 
     // question
+    [[deprecated("Use question() instead")]]
     Result questionSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
                         const Options& options = {}, const std::string& dialogTitle = {}) override;
 
@@ -106,16 +107,11 @@ public:
 
     muse::ValCh<muse::Uri> currentUri() const override;
     muse::RetVal<bool> isCurrentUriDialog() const override;
+    muse::async::Notification currentUriAboutToBeChanged() const override;
     std::vector<muse::Uri> stack() const override;
 
-    muse::Ret openUrl(const std::string& url) const override;
-    muse::Ret openUrl(const QUrl& url) const override;
-
-    muse::Ret isAppExists(const std::string& appIdentifier) const override;
-    muse::Ret canOpenApp(const muse::UriQuery& uri) const override;
-    muse::async::Promise<muse::Ret> openApp(const muse::UriQuery& uri) const override;
-
-    muse::Ret revealInFileBrowser(const muse::io::path_t& filePath) const override;
+    QWindow* topWindow() const override;
+    bool topWindowIsWidget() const override;
 
 private:
 

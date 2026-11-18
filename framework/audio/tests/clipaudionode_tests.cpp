@@ -29,15 +29,9 @@
 #include <thread>
 #include <vector>
 
-// pragma-pack matches rpcpacker_tests.cpp to avoid an ODR segfault at static init.
-#pragma pack(push, 1)
 #include "audio/common/audiotypes.h"
-#pragma pack(pop)
 
 #include "audio/engine/internal/nodes/clipaudionode.h"
-
-//! NOTE The unit under test is compiled into this file: this test binary does not link the audio engine
-#include "audio/engine/internal/nodes/clipaudionode.cpp"
 
 using namespace muse;
 using namespace muse::audio;

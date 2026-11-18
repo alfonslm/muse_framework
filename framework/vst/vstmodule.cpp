@@ -30,7 +30,6 @@
 
 #include "rcommand/icommandsregister.h"
 #include "rcommand/icommandsstate.h"
-#include "ui/iuiactionsregister.h"
 
 #include "internal/vstconfiguration.h"
 #include "internal/vstinstancesregister.h"
@@ -42,7 +41,6 @@
 #include "internal/vstactionscontroller.h"
 #include "internal/vstcommandsregister.h"
 #include "internal/vstcommandsstate.h"
-#include "internal/vstuiactions.h"
 #include "internal/synth/keyswitchmapregistry.h"
 #include "internal/vsttrace.h"
 
@@ -140,11 +138,6 @@ void VSTContext::registerExports()
 
 void VSTContext::resolveImports()
 {
-    auto ar = ioc()->resolve<ui::IUiActionsRegister>(mname);
-    if (ar) {
-        ar->reg(std::make_shared<VstUiActions>(m_actionsController));
-    }
-
     auto cs = ioc()->resolve<muse::rcommand::ICommandsState>(mname);
     if (cs) {
         cs->reg(std::make_shared<VstCommandsState>(iocContext()));

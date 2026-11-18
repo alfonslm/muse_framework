@@ -38,6 +38,11 @@ static Uri VIEWER_URI = Uri("muse://extensions/viewer");
 
 void ExtensionsProvider::reloadExtensions()
 {
+    //! NOTE Without this, reloading picks up a plugin's manifest but keeps
+    //! running the code the engine compiled the first time, so edits to a
+    //! plugin only take effect after a restart.
+    extensionsUiEngine()->clearComponentCache();
+
     extensionsRegister()->reload();
 }
 
@@ -76,6 +81,11 @@ async::Channel<ExtensionUri> ExtensionsProvider::enabledChanged() const
     return extensionsRegister()->enabledChanged();
 }
 
+async::Channel<ExtensionUri, ExtensionActionCode> ExtensionsProvider::dockRequested() const
+{
+    return m_dockRequested;
+}
+
 muse::Ret ExtensionsProvider::perform(const ExtensionUri& uri, const ExtensionActionCode& actionCode)
 {
     const Manifest& m = manifest(uri);
@@ -89,14 +99,18 @@ muse::Ret ExtensionsProvider::perform(const ExtensionUri& uri, const ExtensionAc
     }
 
     switch (a.type) {
-    case Type::Form: {
+    case ExtensionType::Form: {
+        if (a.docked) {
+            m_dockRequested.send(uri, actionCode);
+            return muse::make_ok();
+        }
         UriQuery q = UriQuery(VIEWER_URI);
         q.addParam("extension", Val(uri.toString()));
         q.addParam("action", Val(actionCode));
         q.addParam("modal", Val(a.modal));
         return interactive()->openSync(q).ret;
     } break;
-    case Type::Macros:
+    case ExtensionType::Macros:
         return run(a, m);
     default:
         break;

@@ -28,11 +28,7 @@
 #include <QVector>
 #include <qqmlintegration.h>
 
-#include "actions/actionable.h"
-#include "async/asyncable.h"
-
 #include "modularity/ioc.h"
-#include "actions/iactionsdispatcher.h"
 #include "ui/iuiconfiguration.h"
 
 #include "internal/polylinepointstyle.h"
@@ -45,7 +41,7 @@ struct GhostPoint {
     qreal distToSegment = 1e18;
 };
 
-class PolylinePlot : public QQuickPaintedItem, public muse::async::Asyncable, public muse::actions::Actionable, public muse::Contextable
+class PolylinePlot : public QQuickPaintedItem
 {
     Q_OBJECT
 
@@ -71,6 +67,10 @@ class PolylinePlot : public QQuickPaintedItem, public muse::async::Asyncable, pu
     // indices in the colorsUnderLine vector relate to the lines between points (not the points themselves)
     Q_PROPERTY(QVector<QColor> colorsUnderLine READ colorsUnderLine WRITE setColorsUnderLine NOTIFY colorsUnderLineChanged)
 
+    // optional left/rightEdgeValues represent the line's y values (same units as the points) at the edges of the x range
+    Q_PROPERTY(qreal leftEdgeValue READ leftEdgeValue WRITE setLeftEdgeValue RESET resetLeftEdgeValue NOTIFY leftEdgeValueChanged)
+    Q_PROPERTY(qreal rightEdgeValue READ rightEdgeValue WRITE setRightEdgeValue RESET resetRightEdgeValue NOTIFY rightEdgeValueChanged)
+
     Q_PROPERTY(qreal defaultValue READ defaultValue WRITE setDefaultValue NOTIFY defaultValueChanged)
 
     Q_PROPERTY(qreal xRangeFrom READ xRangeFrom WRITE setXRangeFrom NOTIFY xRangeFromChanged)
@@ -94,12 +94,10 @@ class PolylinePlot : public QQuickPaintedItem, public muse::async::Asyncable, pu
 
     muse::GlobalInject<muse::ui::IUiConfiguration> uiConfiguration;
 
-    muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher { this };
-
 public:
     explicit PolylinePlot(QQuickItem* parent = nullptr);
 
-    Q_INVOKABLE void init();
+    Q_INVOKABLE void cancelEdit();
 
     PolylinePointStyle* standardPointStyle();
     PolylinePointStyle* ghostPointStyle();
@@ -137,6 +135,14 @@ public:
 
     QVector<QColor> colorsUnderLine() const;
     void setColorsUnderLine(const QVector<QColor>&);
+
+    qreal leftEdgeValue() const;
+    void setLeftEdgeValue(qreal);
+    void resetLeftEdgeValue();
+
+    qreal rightEdgeValue() const;
+    void setRightEdgeValue(qreal);
+    void resetRightEdgeValue();
 
     qreal defaultValue() const;
     void setDefaultValue(qreal v);
@@ -186,7 +192,6 @@ signals:
     void pointAdded(qreal x, qreal y, bool completed);
     void pointMoved(int index, qreal x, qreal y, bool completed);
     void pointRemoved(int index, bool completed);
-    void dragCancelled();
     void interactionFinished();
 
     void xRangeFromChanged();
@@ -202,6 +207,9 @@ signals:
     void pointsChanged();
 
     void colorsUnderLineChanged();
+
+    void leftEdgeValueChanged();
+    void rightEdgeValueChanged();
 
     void activePointChanged();
 
@@ -270,6 +278,9 @@ private:
     QVector<int> m_visibleToDomainIndex;
 
     QVector<QColor> m_colorsUnderLine;
+
+    std::optional<qreal> m_leftEdgeValue;
+    std::optional<qreal> m_rightEdgeValue;
 
     qreal m_defaultValue = 1.0;
 

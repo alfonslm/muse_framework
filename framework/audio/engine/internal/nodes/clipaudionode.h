@@ -36,6 +36,11 @@
 #include "../codecs/wavdecoder.h"
 
 namespace muse::audio::engine {
+//! Adds one output frame, taken at `sourcePos` (in frames of the source), to `out`.
+//! Used by ClipAudioNode; declared here for its tests
+void renderResampledFrame(const codec::PcmAudio& audio, samples_t frames, sample_rate_t outSampleRate, double sourcePos, float* out,
+                          audioch_t outChannelCount);
+
 //! NOTE The source of an audio clip track (FontDaw, FRAMEWORK_CHANGES F1 step 2).
 //! Plays a list of clips over decoded audio, following the transport the way the event sources do:
 //! seek() sets the position, process() moves it forward while the mode is a playing one.

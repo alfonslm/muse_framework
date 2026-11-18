@@ -24,17 +24,24 @@
 
 #include <memory>
 
+#include "async/channel.h"
+
+#include "modularity/ioc.h"
 #include "interactive/iinteractive.h"
+#include "interactive/iinteractiveuriregister.h"
 
 namespace muse::testflow {
 class TestflowInteractive : public IInteractive
 {
+    GlobalInject<interactive::IInteractiveUriRegister> uriRegister;
+
 public:
     TestflowInteractive() = default;
 
     void setRealInteractive(std::shared_ptr<IInteractive> real);
     std::shared_ptr<IInteractive> realInteractive() const;
 
+    [[deprecated("Use question() instead")]]
     Result questionSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
                         const Options& options = {}, const std::string& dialogTitle = {}) override;
 
@@ -119,10 +126,29 @@ public:
     // TestflowInteractive
     io::path_t selectedFilePath() const; // last selected file path
 
+    //! NOTE Nobody can answer dialogs in an unattended run, so they are not shown and get Cancel
+    enum class UnattendedDialogs {
+        Show,           // interactive run (default)
+        Skip,           // no test case runs (e.g. the application startup): all dialogs are skipped
+        FailOnMessages  // a test case runs: messages (info, warning, error) are unexpected,
+                        // dialogs and questions are the test case's business
+    };
+    void setUnattendedDialogs(UnattendedDialogs mode);
+
+    async::Channel<std::string /*type*/, std::string /*title*/, std::string /*text*/> unexpectedMessage() const;
+
 private:
     std::shared_ptr<IInteractive> m_real = nullptr;
 
+    bool isDialog(const Uri& uri) const;
+    Result skippedResult(const std::string& type, const std::string& title) const;
+    static async::Promise<Result> resultPromise(const Result& res);
+
+    Result unattendedMessage(const std::string& type, const std::string& title, const Text& text);
+
     io::path_t m_selectedFilePath;
+    UnattendedDialogs m_unattendedDialogs = UnattendedDialogs::Show;
+    async::Channel<std::string, std::string, std::string> m_unexpectedMessage;
 };
 
 using TestflowInteractivePtr = std::shared_ptr<TestflowInteractive>;
