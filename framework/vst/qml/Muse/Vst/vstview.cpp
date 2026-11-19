@@ -136,6 +136,13 @@ void VstView::init()
         return;
     }
 
+    //! NOTE: at shutdown the instance may be unloaded while this editor is still open:
+    //! it then closes the editor first
+    m_instance->registerEditor(this, [this]() {
+        deinitPluginView();
+        m_instance = nullptr;
+    });
+
     if (m_view->isPlatformTypeSupported(currentPlatformUiType()) != Steinberg::kResultTrue) {
         return;
     }
@@ -239,6 +246,10 @@ void VstView::deinitPluginView()
         m_view->setFrame(nullptr);
         m_view->removed();
         m_view = nullptr;
+    }
+
+    if (m_instance) {
+        m_instance->unregisterEditor(this);
     }
 }
 

@@ -22,6 +22,7 @@
 
 #include "vstplugininstance.h"
 
+#include <cassert>
 #include <chrono>
 
 #include "modularity/ioc.h"
@@ -43,6 +44,7 @@ static const std::string_view COMPONENT_STATE_KEY = "componentState";
 static const std::string_view CONTROLLER_STATE_KEY = "controllerState";
 
 static VstPluginInstanceId s_lastId = 0;
+static std::atomic_bool s_isShuttingDown = false;
 
 static void stateBufferFromString(VstMemoryStream& buffer, char* strData, const size_t strSize)
 {
@@ -62,6 +64,9 @@ VstPluginInstance::VstPluginInstance(const muse::audio::AudioResourceId& resourc
 
     m_id = ++s_lastId;
 
+    //! NOTE: cached, because the destructor may run late in the shutdown, when the IoC is being reset
+    m_mainThreadId = threadSecurer()->mainThreadId();
+
     m_componentHandlerPtr->pluginParamsChanged().onNotify(this, [this]() {
         Async::call(this, [this]() {
             rescanParams();
@@ -75,33 +80,198 @@ VstPluginInstance::~VstPluginInstance()
     //! returns before touching members (provider, etc.)
     m_isLoaded = false;
 
-    muse::audio::AudioResourceId resourceId = m_resourceId;
-    std::shared_ptr<VstPluginProvider> provider = std::move(m_pluginProvider);
-    PluginModulePtr module = std::move(m_module);
+    //! NOTE: No editor can be open here: an editor holds a reference to the instance
 
-    auto securer = threadSecurer;
-    auto repo = modulesRepo;
+    Resources resources = takeResources();
+    if (!resources.provider && !resources.module) {
+        return;
+    }
 
-    Async::call(nullptr, [resourceId, provider, module, securer, repo]() mutable {
-        ONLY_MAIN_THREAD(securer);
+    //! NOTE: The plugin must be released on the main thread (see releaseResources).
+    //! At shutdown the main event loop no longer runs, so a release posted to it would never
+    //! happen and the module would stay loaded until exit(), where plugins crash in static
+    //! destructors (e.g. Kontakt 8 on macOS). VSTModule::onDeinit() runs the deferred releases.
+    if (s_isShuttingDown && std::this_thread::get_id() == m_mainThreadId) {
+        releaseResources(resources);
+        return;
+    }
 
-        repo()->removePluginModule(resourceId);
+    {
+        std::lock_guard lock(deferredResourcesMutex());
+        deferredResources().push_back(std::move(resources));
+    }
 
-        //! NOTE: the order of destruction is important here.
-        //! Deactivate the component before the provider destroys it.
-        //! This must happen on the main thread, after any editor view
-        //! has been closed, to avoid crashes in plugins (e.g. ZENOLOGY)
-        //! that free editor-dependent resources in setActive(false).
-        if (provider) {
-            auto component = provider->component();
-            if (component) {
+    Async::call(nullptr, []() {
+        releaseDeferredResources();
+    }, m_mainThreadId);
+}
+
+VstPluginInstance::Resources VstPluginInstance::takeResources()
+{
+    Resources resources;
+    resources.resourceId = m_resourceId;
+    resources.provider = std::move(m_pluginProvider);
+    resources.module = std::move(m_module);
+    resources.isComponentActive = m_isComponentActive.exchange(false);
+    resources.isProcessing = m_isProcessing.exchange(false);
+    return resources;
+}
+
+void VstPluginInstance::releaseResources(Resources& resources)
+{
+    //! MAIN THREAD
+
+    //! NOTE: the order of destruction is important here.
+    //! Stop processing and deactivate the component before the provider terminates it,
+    //! and terminate it before the module is released (its destructor calls bundleExit / ModuleExit).
+    //! This must happen on the main thread, after any editor view
+    //! has been closed, to avoid crashes in plugins (e.g. ZENOLOGY)
+    //! that free editor-dependent resources in setActive(false).
+    if (resources.provider) {
+        PluginComponentPtr component = resources.provider->component();
+        if (component) {
+            if (resources.isProcessing) {
+                IAudioProcessorPtr processor(component.get());
+                if (processor) {
+                    processor->setProcessing(false);
+                }
+            }
+
+            if (resources.isComponentActive) {
                 component->setActive(false);
             }
         }
+    }
 
-        provider.reset();
-        module.reset();
-    }, threadSecurer()->mainThreadId());
+    resources.provider.reset();
+
+    if (auto repo = muse::modularity::globalIoc()->resolve<IVstModulesRepository>("vst")) {
+        repo->removePluginModule(resources.resourceId);
+    }
+
+    resources.module.reset();
+}
+
+std::vector<VstPluginInstance::Resources>& VstPluginInstance::deferredResources()
+{
+    //! NOTE: intentionally leaked: it must not release plugins from a static destructor at exit
+    static auto* resources = new std::vector<Resources>();
+    return *resources;
+}
+
+std::mutex& VstPluginInstance::deferredResourcesMutex()
+{
+    static auto* mutex = new std::mutex();
+    return *mutex;
+}
+
+void VstPluginInstance::releaseDeferredResources()
+{
+    //! MAIN THREAD
+
+    std::vector<Resources> resources;
+    {
+        std::lock_guard lock(deferredResourcesMutex());
+        resources.swap(deferredResources());
+    }
+
+    for (Resources& r : resources) {
+        releaseResources(r);
+    }
+}
+
+void VstPluginInstance::setShuttingDown()
+{
+    s_isShuttingDown = true;
+}
+
+void VstPluginInstance::unload()
+{
+    //! MAIN THREAD, audio stopped: see the precondition in the header
+    assert(std::this_thread::get_id() == m_mainThreadId);
+
+    m_isLoaded = false;
+
+    closeEditors();
+
+    Resources resources = takeResources();
+    releaseResources(resources);
+}
+
+void VstPluginInstance::closeEditors()
+{
+    //! MAIN THREAD
+
+    std::map<const void*, std::function<void()> > editors;
+    {
+        std::lock_guard lock(m_editorsMutex);
+        editors.swap(m_editors);
+    }
+
+    for (auto& [editor, close] : editors) {
+        if (close) {
+            close();
+        }
+    }
+}
+
+void VstPluginInstance::registerEditor(const void* editor, const std::function<void()>& close)
+{
+    std::lock_guard lock(m_editorsMutex);
+    m_editors[editor] = close;
+}
+
+void VstPluginInstance::unregisterEditor(const void* editor)
+{
+    std::lock_guard lock(m_editorsMutex);
+    m_editors.erase(editor);
+}
+
+bool VstPluginInstance::setComponentActive(bool active)
+{
+    if (!m_isLoaded || !m_pluginProvider) {
+        return false;
+    }
+
+    PluginComponentPtr component = m_pluginProvider->component();
+    if (!component) {
+        return false;
+    }
+
+    if (m_isComponentActive == active) {
+        return true;
+    }
+
+    const Steinberg::tresult res = component->setActive(active);
+
+    //! NOTE: remembered even if the call failed, so that the plugin
+    //! is deactivated in any case before it is terminated
+    m_isComponentActive = active;
+
+    return res == Steinberg::kResultOk;
+}
+
+bool VstPluginInstance::setProcessing(bool processing)
+{
+    if (!m_isLoaded || !m_pluginProvider) {
+        return false;
+    }
+
+    IAudioProcessorPtr processor(m_pluginProvider->component().get());
+    if (!processor) {
+        return false;
+    }
+
+    if (m_isProcessing == processing) {
+        return true;
+    }
+
+    const Steinberg::tresult res = processor->setProcessing(processing);
+
+    //! NOTE: many plugins return kNotImplemented here; the state is remembered anyway
+    m_isProcessing = processing;
+
+    return res == Steinberg::kResultOk || res == Steinberg::kNotImplemented;
 }
 
 const muse::audio::AudioResourceId& VstPluginInstance::resourceId() const
