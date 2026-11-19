@@ -81,16 +81,16 @@ public:
     tresult PLUGIN_API setIoMode(IoMode) override { return kResultOk; }
     int32 PLUGIN_API getBusCount(MediaType type, Steinberg::Vst::BusDirection dir) override
     {
-        return type == kAudio && dir == kOutput ? 1 : 0;
+        return type == kAudio ? 1 : 0; // one stereo bus each way, so the plugin can also be an effect
     }
 
     tresult PLUGIN_API getBusInfo(MediaType type, Steinberg::Vst::BusDirection dir, int32 index, BusInfo& bus) override
     {
-        if (type != kAudio || dir != kOutput || index != 0) {
+        if (type != kAudio || index != 0) {
             return kInvalidArgument;
         }
         bus.mediaType = kAudio;
-        bus.direction = kOutput;
+        bus.direction = dir;
         bus.channelCount = 2;
         bus.busType = kMain;
         bus.flags = BusInfo::kDefaultActive;
@@ -203,7 +203,12 @@ class Vst_AudioClientTests : public ::testing::Test
 protected:
     void SetUp() override
     {
-        m_client.init(PluginType::Instrument, std::make_shared<FakeInstance>(&m_plugin));
+        setUpAs(PluginType::Instrument);
+    }
+
+    void setUpAs(PluginType type)
+    {
+        m_client.init(type, std::make_shared<FakeInstance>(&m_plugin));
 
         audio::OutputSpec spec;
         spec.sampleRate = 48000;
@@ -344,4 +349,67 @@ TEST_F(Vst_AudioClientTests, StoppedBlocksAreUnchanged)
     ASSERT_EQ(m_plugin.calls.size(), 2u);
     EXPECT_EQ(m_plugin.calls[0].numSamples, BLOCK);
     EXPECT_EQ(m_plugin.calls[1].numSamples, BLOCK);
+}
+
+//! A loop jump lands at the cycle start plus the overshoot of the block that crossed the cycle end
+TEST_F(Vst_AudioClientTests, LoopJumpWithOvershootIsNotALocate)
+{
+    m_client.setCycle(0.0, 4.0);
+    m_client.setIsPlaying(true);
+    play(96000 - BLOCK);
+    m_plugin.calls.clear();
+
+    play(300);
+
+    ASSERT_EQ(m_plugin.calls.size(), 1u);
+    EXPECT_TRUE(m_plugin.calls[0].playing);
+    EXPECT_EQ(m_plugin.calls[0].projectTimeSamples, 300);
+}
+
+//! A jump back into the cycle from inside it, before its end, is a locate
+TEST_F(Vst_AudioClientTests, JumpInsideTheCycleIsALocate)
+{
+    m_client.setCycle(0.0, 4.0);
+    m_client.setIsPlaying(true);
+    play(24000);
+    m_plugin.calls.clear();
+
+    play(0);
+
+    ASSERT_EQ(m_plugin.calls.size(), 2u);
+    EXPECT_EQ(m_plugin.calls[0].numSamples, 0);
+    EXPECT_FALSE(m_plugin.calls[0].playing);
+    EXPECT_TRUE(m_plugin.calls[1].playing);
+}
+
+//! An effect is given the playhead's position, which stands still in an offline export: no state calls
+TEST_F(Vst_AudioClientTests, EffectAtAConstantPositionGetsNoStateCalls)
+{
+    setUpAs(PluginType::Fx);
+    m_client.setIsPlaying(true);
+
+    play(48000);
+    play(48000);
+    play(48000);
+
+    ASSERT_EQ(m_plugin.calls.size(), 3u);
+    for (const RecordedCall& call : m_plugin.calls) {
+        EXPECT_EQ(call.numSamples, BLOCK);
+        EXPECT_TRUE(call.playing);
+    }
+}
+
+//! A silent aux chain is skipped, so an effect's position can jump when signal returns: no state call
+TEST_F(Vst_AudioClientTests, EffectAfterAGapGetsNoStateCall)
+{
+    setUpAs(PluginType::Fx);
+    m_client.setIsPlaying(true);
+
+    play(0);
+    play(48000);
+
+    ASSERT_EQ(m_plugin.calls.size(), 2u);
+    EXPECT_EQ(m_plugin.calls[0].numSamples, BLOCK);
+    EXPECT_EQ(m_plugin.calls[1].numSamples, BLOCK);
+    EXPECT_EQ(m_plugin.calls[1].projectTimeSamples, 48000);
 }

@@ -107,7 +107,7 @@ private:
     void processStateChange(bool withEvents);
 
     //! True when the transport plays from a position the plugin hasn't been told about yet: the first
-    //! playing block after activation, or a jump (not a loop jump back to the cycle start)
+    //! playing block after activation, or a jump (not a loop jump back into the cycle). Instruments only
     bool isLocateWhilePlaying(audio::samples_t position) const;
     void rememberCall(audio::samples_t position, audio::samples_t samples);
 
@@ -164,6 +164,8 @@ private:
         bool playing = false;
         audio::samples_t position = 0;
         audio::samples_t nextPosition = 0;
+        bool hasEndQuarters = false;
+        double endQuarters = 0.0;
     };
     LastCall m_lastCall;
 

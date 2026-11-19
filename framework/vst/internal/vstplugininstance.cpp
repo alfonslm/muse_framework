@@ -248,7 +248,7 @@ void VstPluginInstance::rescanParams()
     }
 
     //! NOTE Traced: a plugin may rebuild internal data while its state is read or written on the
-    //! main thread, at the same time as process() runs on the audio thread (FD-160)
+    //! main thread, at the same time as process() runs on the audio thread
     const bool traced = trace::isEnabled();
     const auto traceStart = std::chrono::steady_clock::now();
     if (traced) {
