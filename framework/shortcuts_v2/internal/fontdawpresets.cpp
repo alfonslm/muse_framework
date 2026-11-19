@@ -30,9 +30,8 @@
 
 #include "log.h"
 
-// FontDaw (shortcut work order v2, A2): skeleton. Each body is filled in by the implementation
-// step named in docs/fontdaw/design/shortcuts/09-layouts-framework.md (FontDawDev), with tests in
-// tests/fontdawpresets_tests.cpp. Until then they leave everything as upstream has it.
+// FontDaw (shortcut work order v2, A2): docs/fontdaw/design/shortcuts/09-layouts-framework.md (FontDawDev);
+// tests in tests/fontdawpresets_tests.cpp and tests/commandshortcutsregister_tests.cpp.
 
 using namespace muse;
 using namespace muse::shortcuts;
@@ -77,28 +76,62 @@ std::vector<PresetInfo> fontdaw::parseBuiltInPresets(const ValList& entries)
 }
 
 namespace {
-ShortcutList shortcutsFromJson(const JsonArray& groups)
+//! false for anything but the expected shapes (the file is untrusted; a wrong type must not reach
+//! a JsonValue conversion that assumes it)
+bool shortcutsFromJson(const JsonValue& value, ShortcutList& result)
 {
-    // the format of upstream's key files: [ { "scope", "shortcuts": [ { "command", "sequences", "autorepeat" } ] } ]
-    ShortcutList result;
+    if (!value.isArray()) {
+        return false;
+    }
+
+    const JsonArray groups = value.toArray();
     for (size_t i = 0; i < groups.size(); ++i) {
-        const JsonObject group = groups.at(i).toObject();
-        const std::string scope = group.value("scope").toStdString();
-        const JsonArray list = group.value("shortcuts").toArray();
-        for (size_t j = 0; j < list.size(); ++j) {
-            const JsonObject obj = list.at(j).toObject();
+        const JsonValue groupValue = groups.at(i);
+        if (!groupValue.isObject()) {
+            return false;
+        }
+        const JsonObject group = groupValue.toObject();
+        const JsonValue scope = group.value("scope");
+        const JsonValue list = group.value("shortcuts");
+        if (!scope.isString() || !list.isArray()) {
+            return false;
+        }
+
+        const JsonArray entries = list.toArray();
+        for (size_t j = 0; j < entries.size(); ++j) {
+            const JsonValue entryValue = entries.at(j);
+            if (!entryValue.isObject()) {
+                return false;
+            }
+            const JsonObject obj = entryValue.toObject();
+            const JsonValue command = obj.value("command");
+            const JsonValue sequences = obj.value("sequences");
+            if (!command.isString() || !sequences.isArray()) {
+                return false;
+            }
+
             Shortcut sc;
-            sc.scope = scope;
-            sc.command = rcommand::Command(obj.value("command").toStdString());
-            sc.autoRepeat = obj.contains("autorepeat") ? obj.value("autorepeat").toBool() : true;
-            const JsonArray seqs = obj.value("sequences").toArray();
+            sc.scope = scope.toStdString();
+            sc.command = rcommand::Command(command.toStdString());
+            if (obj.contains("autorepeat")) {
+                const JsonValue autorepeat = obj.value("autorepeat");
+                if (!autorepeat.isBool()) {
+                    return false;
+                }
+                sc.autoRepeat = autorepeat.toBool();
+            }
+
+            const JsonArray seqs = sequences.toArray();
             for (size_t k = 0; k < seqs.size(); ++k) {
+                if (!seqs.at(k).isString()) {
+                    return false;
+                }
                 sc.sequences.push_back(seqs.at(k).toStdString());
             }
             result.push_back(std::move(sc));
         }
     }
-    return result;
+    return true;
 }
 
 JsonArray shortcutsToJson(const ShortcutList& shortcuts)
@@ -142,6 +175,11 @@ std::string fontdaw::validTitle(const std::string& title)
 {
     std::string trimmed = title;
     strings::trim(trimmed);
+    for (unsigned char c : trimmed) {
+        if (c < 0x20 || c == 0x7f) { // control characters and line breaks
+            return std::string();
+        }
+    }
     if (trimmed.empty() || String::fromStdString(trimmed).size() > USER_PRESET_TITLE_MAX) {
         return std::string();
     }
@@ -163,10 +201,18 @@ RetVal<fontdaw::UserPresetFile> fontdaw::readUserPreset(const io::path_t& path, 
     }
 
     const JsonObject root = doc.rootObject();
+    const JsonValue version = root.value("version");
+    const JsonValue title = root.value("title");
+    const JsonValue parent = root.value("parent");
+    if (!version.isNumber() || !title.isString() || !parent.isString()) {
+        LOGE() << "user shortcuts preset lacks version, title or parent: " << path;
+        return RetVal<UserPresetFile>(make_ret(Ret::Code::UnknownError));
+    }
+
     UserPresetFile file;
-    file.version = root.value("version").toInt();
-    file.title = validTitle(root.value("title").toStdString());
-    file.parent = root.value("parent").toStdString();
+    file.version = version.toInt();
+    file.title = validTitle(title.toStdString());
+    file.parent = parent.toStdString();
 
     if (file.version < 1 || file.version > USER_PRESET_FILE_VERSION) {
         LOGE() << "user shortcuts preset has an unknown version " << file.version << ": " << path;
@@ -181,7 +227,10 @@ RetVal<fontdaw::UserPresetFile> fontdaw::readUserPreset(const io::path_t& path, 
         return RetVal<UserPresetFile>(make_ret(Ret::Code::UnknownError));
     }
 
-    file.shortcuts = shortcutsFromJson(root.value("shortcuts").toArray());
+    if (!shortcutsFromJson(root.value("shortcuts"), file.shortcuts)) {
+        LOGE() << "user shortcuts preset has malformed shortcuts: " << path;
+        return RetVal<UserPresetFile>(make_ret(Ret::Code::UnknownError));
+    }
     return RetVal<UserPresetFile>::make_ok(file);
 }
 
@@ -235,6 +284,11 @@ std::vector<std::string> fontdaw::builtInIds(const IShortcutsConfiguration& conf
 
 io::path_t fontdaw::userPresetPath(const IShortcutsConfiguration& config, const std::string& id)
 {
+    // the id comes from the settings or a file name: never a path of its own
+    if (!isUserPresetId(id) || !io::isAllowedFileName(id) || id.find_first_of("/\\") != std::string::npos) {
+        LOGE() << "invalid user shortcuts preset id: " << id;
+        return io::path_t();
+    }
     return config.userPresetsDirPath() + "/" + id + ".json";
 }
 

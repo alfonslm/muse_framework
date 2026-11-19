@@ -141,6 +141,11 @@ void ShortcutsModel::load()
         emit currentPresetNameChanged();
     }, async::Asyncable::Mode::SetReplace);
 
+    // FontDaw (A2): a preset saved or deleted here or in another window
+    commandShortcutsRegister()->presetsChanged().onNotify(this, [this]() {
+        emit presetsChanged();
+    }, async::Asyncable::Mode::SetReplace);
+
     std::sort(m_items.begin(), m_items.end(), [](const Item& i1, const Item& i2) {
         return i1.group > i2.group || (i1.group == i2.group && i1.title < i2.title);
     });

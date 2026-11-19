@@ -24,7 +24,12 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include <fstream>
+
+#include <QTemporaryDir>
+
 #include "internal/fontdawpresets.h"
+#include "mocks/shortcutsconfigurationmock.h"
 #include "rcommand/tests/mocks/commandsregistermock.h"
 
 using namespace muse;
@@ -168,5 +173,70 @@ TEST(Shortcuts_FontDawPresetsTests, ApplyRenames)
     EXPECT_EQ(list.at(0).command, rcommand::Command("test://new"));
     EXPECT_EQ(list.at(0).sequences, std::vector<std::string> { "X" });
     EXPECT_EQ(list.at(1).command, rcommand::Command("test://kept"));
+}
+
+// Fable check of the series: a malformed user preset file is rejected (and kept), never read with
+// the wrong types
+TEST(Shortcuts_FontDawPresetsTests, ReadUserPreset_RejectsMalformedFiles)
+{
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const std::string head = R"("version": 1, "title": "Mine", "parent": "shortcuts_azerty")";
+    const std::vector<std::pair<std::string, std::string> > files = {
+        { "no-shortcuts", "{ " + head + " }" },
+        { "shortcuts-number", "{ " + head + R"(, "shortcuts": 5 })" },
+        { "group-not-object", "{ " + head + R"(, "shortcuts": [ 7 ] })" },
+        { "group-shortcuts-not-array", "{ " + head + R"(, "shortcuts": [ { "scope": "TEST", "shortcuts": "x" } ] })" },
+        { "entry-without-sequences", "{ " + head + R"(, "shortcuts": [ { "scope": "TEST", "shortcuts": [ { "command": "test://a" } ] } ] })" },
+        { "sequence-not-string", "{ " + head + R"(, "shortcuts": [ { "scope": "TEST", "shortcuts": [ { "command": "test://a", "sequences": [ 1 ] } ] } ] })" },
+        { "version-string", R"({ "version": "1", "title": "Mine", "parent": "shortcuts_azerty", "shortcuts": [] })" },
+        { "title-number", R"({ "version": 1, "title": 3, "parent": "shortcuts_azerty", "shortcuts": [] })" },
+        { "root-array", "[]" },
+    };
+
+    for (const auto& [name, content] : files) {
+        const std::string path = dir.path().toStdString() + "/" + name + ".json";
+        {
+            std::ofstream out(path);
+            out << content;
+        }
+        EXPECT_FALSE(fontdaw::readUserPreset(io::path_t(path), { "shortcuts_azerty" }).ret) << name;
+    }
+
+    // the well-formed one is read
+    const std::string ok = dir.path().toStdString() + "/ok.json";
+    {
+        std::ofstream out(ok);
+        out << "{ " + head + R"(, "shortcuts": [ { "scope": "TEST", "shortcuts": [ { "command": "test://a", "sequences": [ "X" ] } ] } ] })";
+    }
+    RetVal<fontdaw::UserPresetFile> file = fontdaw::readUserPreset(io::path_t(ok), { "shortcuts_azerty" });
+    ASSERT_TRUE(file.ret);
+    ASSERT_EQ(file.val.shortcuts.size(), 1u);
+    EXPECT_EQ(file.val.shortcuts.at(0).sequences, std::vector<std::string> { "X" });
+}
+
+// An id is never a path of its own
+TEST(Shortcuts_FontDawPresetsTests, UserPresetPath_OnlyForSafeIds)
+{
+    using ::testing::NiceMock;
+    using ::testing::Return;
+
+    NiceMock<ShortcutsConfigurationMock> config;
+    ON_CALL(config, userPresetsDirPath()).WillByDefault(Return(io::path_t("/u/shortcuts/presets")));
+
+    EXPECT_EQ(fontdaw::userPresetPath(config, "user-mine"), io::path_t("/u/shortcuts/presets/user-mine.json"));
+    EXPECT_TRUE(fontdaw::userPresetPath(config, "user-../../x").empty());
+    EXPECT_TRUE(fontdaw::userPresetPath(config, "user-a/b").empty());
+    EXPECT_TRUE(fontdaw::userPresetPath(config, "user-a\\b").empty());
+    EXPECT_TRUE(fontdaw::userPresetPath(config, "user-a:b").empty());
+    EXPECT_TRUE(fontdaw::userPresetPath(config, "shortcuts_azerty").empty());
+}
+
+TEST(Shortcuts_FontDawPresetsTests, ValidTitle_RejectsControlCharacters)
+{
+    EXPECT_EQ(fontdaw::validTitle("Two\nlines"), "");
+    EXPECT_EQ(fontdaw::validTitle("Tab\there"), "");
+    EXPECT_EQ(fontdaw::validTitle(std::string("Bell\x07")), "");
+    EXPECT_EQ(fontdaw::validTitle("Åäö fine"), "Åäö fine");
 }
 

@@ -682,7 +682,7 @@ void CommandShortcutsRegister::deletePreset(const std::string& presetName)
     m_presetsChanged.notify(); // FontDaw (A2)
 }
 
-// FontDaw (shortcut work order v2, A2): skeleton, filled in by the implementation steps.
+// FontDaw (shortcut work order v2, A2): the presets list and "Save as…" (internal/fontdawpresets.h).
 std::vector<PresetInfo> CommandShortcutsRegister::presetInfos() const
 {
     std::vector<PresetInfo> result;
