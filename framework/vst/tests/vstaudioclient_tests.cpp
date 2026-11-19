@@ -162,6 +162,10 @@ public:
     PluginComponentPtr component() const override { return PluginComponentPtr(static_cast<IComponent*>(m_plugin)); }
     PluginMidiMappingPtr midiMapping() const override { return nullptr; }
     std::optional<uint32_t> processContextRequirements() const override { return std::nullopt; }
+    bool setComponentActive(bool active) override { return m_plugin->setActive(active) == kResultOk; }
+    bool setProcessing(bool processing) override { return m_plugin->setProcessing(processing) == kResultOk; }
+    void registerEditor(const void*, const std::function<void()>&) override {}
+    void unregisterEditor(const void*) override {}
     void updatePluginConfig(const audio::AudioUnitConfig&) override {}
     void refreshConfig() override {}
     async::Channel<audio::AudioUnitConfig> pluginSettingsChanged() const override { return {}; }
