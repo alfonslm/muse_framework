@@ -77,6 +77,11 @@ public:
     //! The engine's clocks for the next process() call (see transportClockAt() in vstprocesscontext.h)
     void setTransportClock(const VstTransportInfo& clock);
 
+    //! Moves the transport to a position without processing audio, e.g. to where the last block ended
+    //! before the transport stops: the next call to the plugin, a state change or a block, carries it.
+    //! The clock fields are cleared until the next block sets them.
+    void setTransportPosition(audio::samples_t positionSamples, const audio::MusicalPosition& musicalPosition);
+
     ParamsMapping paramsMapping(const std::set<Steinberg::Vst::CtrlNumber>& controllers) const;
 
 private:
@@ -95,6 +100,16 @@ private:
 
     void ensureActivity();
     void disableActivity();
+
+    //! A process() call with no samples (VST3 allows it for state changes): tells the plugin the transport
+    //! state and position in m_processContext without rendering anything. With withEvents false, the
+    //! queued events and parameter changes are kept for the next block instead of being sent with it.
+    void processStateChange(bool withEvents);
+
+    //! True when the transport plays from a position the plugin hasn't been told about yet: the first
+    //! playing block after activation, or a jump (not a loop jump back to the cycle start)
+    bool isLocateWhilePlaying(audio::samples_t position) const;
+    void rememberCall(audio::samples_t position, audio::samples_t samples);
 
     void flushBuffers();
 
@@ -118,6 +133,8 @@ private:
 
     VstEventList m_inputEvents;
     VstParameterChanges m_inputParamChanges;
+    VstEventList m_noInputEvents; // always empty, for state changes that must not take the queued events
+    VstParameterChanges m_noInputParamChanges;
     VstEventList m_outputEvents;
     VstProcessData m_processData;
     VstProcessContext m_processContext;
@@ -140,6 +157,15 @@ private:
     double m_cycleStartQuarters = 0.0;
     double m_cycleEndQuarters = 0.0;
     VstTransportInfo m_clock; // only the clock fields are used
+
+    //! The last call to the plugin since activation, to tell a jump from a block that runs on
+    struct LastCall {
+        bool valid = false;
+        bool playing = false;
+        audio::samples_t position = 0;
+        audio::samples_t nextPosition = 0;
+    };
+    LastCall m_lastCall;
 
     struct TraceState {
         std::string name;

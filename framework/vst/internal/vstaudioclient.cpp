@@ -292,19 +292,32 @@ audio::samples_t VstAudioClient::process(float* output, samples_t samplesPerChan
 
     updateProcessContext(playbackPositionSamples, musicalPosition);
 
-    if (trace::isEnabled()) {
-        traceBeforeProcess(samplesPerChannel);
-    }
-
     if (samplesPerChannel > m_outputSpec.samplesPerChannel) {
         OutputSpec newSpec = m_outputSpec;
         newSpec.samplesPerChannel = samplesPerChannel;
         setOutputSpec(newSpec);
     }
 
+    //! NOTE Before playing from a new position (after activation or a jump), tell the plugin where it is
+    //! while the transport is still stopped, in a call of its own: a plugin that renders from the host's
+    //! position may otherwise start from where it was. Events queued for this block wait for it.
+    if (isLocateWhilePlaying(playbackPositionSamples)) {
+        constexpr uint32_t playingFlag = static_cast<uint32_t>(VstProcessContext::kPlaying);
+        m_processContext.state &= ~playingFlag;
+        processStateChange(false);
+        m_processContext.state |= playingFlag;
+        m_processData.numSamples = samplesPerChannel;
+    }
+
+    if (trace::isEnabled()) {
+        traceBeforeProcess(samplesPerChannel);
+    }
+
     if (m_type == PluginType::Fx) {
         extractInputSamples(samplesPerChannel, output);
     }
+
+    rememberCall(playbackPositionSamples, samplesPerChannel);
 
     if (processor->process(m_processData) != Steinberg::kResultOk) {
         return 0;
@@ -411,6 +424,83 @@ void VstAudioClient::setTransportClock(const VstTransportInfo& clock)
     m_clock.continuousSamples = clock.continuousSamples;
     m_clock.hasSystemTime = clock.hasSystemTime;
     m_clock.systemTimeNs = clock.systemTimeNs;
+}
+
+void VstAudioClient::setTransportPosition(samples_t positionSamples, const MusicalPosition& musicalPosition)
+{
+    m_clock = VstTransportInfo {};
+    updateProcessContext(positionSamples, musicalPosition);
+}
+
+bool VstAudioClient::isLocateWhilePlaying(samples_t position) const
+{
+    if ((m_processContext.state & VstProcessContext::kPlaying) == 0) {
+        return false;
+    }
+
+    if (!m_lastCall.valid) {
+        return true;
+    }
+
+    if (!m_lastCall.playing) {
+        //! Told already, by a stopped call at this position
+        return position != m_lastCall.position;
+    }
+
+    if (position == m_lastCall.nextPosition) {
+        return false;
+    }
+
+    //! A loop jump back to the cycle start is expected by the plugin: the cycle is in the context
+    static constexpr double QUARTERS_TOLERANCE = 1e-3;
+    const bool musicValid = (m_processContext.state & VstProcessContext::kProjectTimeMusicValid) != 0;
+    if (m_hasCycle && musicValid && std::fabs(m_processContext.projectTimeMusic - m_cycleStartQuarters) < QUARTERS_TOLERANCE) {
+        return false;
+    }
+
+    return true;
+}
+
+void VstAudioClient::rememberCall(samples_t position, samples_t samples)
+{
+    m_lastCall.valid = true;
+    m_lastCall.playing = (m_processContext.state & VstProcessContext::kPlaying) != 0;
+    m_lastCall.position = position;
+    m_lastCall.nextPosition = position + samples;
+}
+
+void VstAudioClient::processStateChange(bool withEvents)
+{
+    IAudioProcessorPtr processor = pluginProcessor();
+    if (!processor || !m_isActive) {
+        return;
+    }
+
+    m_processData.numSamples = 0;
+
+    if (trace::isEnabled()) {
+        traceBeforeProcess(0);
+    }
+
+    const samples_t position = static_cast<samples_t>(m_processContext.projectTimeSamples);
+    rememberCall(position, 0);
+
+    if (withEvents) {
+        processor->process(m_processData);
+        m_inputEvents.clear();
+        m_inputParamChanges.clearQueue();
+    } else {
+        m_processData.inputEvents = &m_noInputEvents;
+        m_processData.inputParameterChanges = &m_noInputParamChanges;
+        processor->process(m_processData);
+        m_processData.inputEvents = &m_inputEvents;
+        m_processData.inputParameterChanges = &m_inputParamChanges;
+    }
+
+    //! Nothing is rendered, and the transport requests of a plugin that is told the state are not acted on
+    m_outputEvents.clear();
+    m_needUpdateState = false;
+    m_processData.numSamples = static_cast<Steinberg::int32>(m_outputSpec.samplesPerChannel);
 }
 
 void VstAudioClient::setUpProcessData()
@@ -652,6 +742,7 @@ void VstAudioClient::ensureActivity()
     processor->setProcessing(true);
 
     m_isActive = true;
+    m_lastCall = LastCall {};
 
     m_trace.firstAfterActivation = true;
     if (trace::isEnabled()) {
@@ -676,9 +767,10 @@ void VstAudioClient::disableActivity()
         return;
     }
 
+    //! NOTE The transport stopped (or started) since the last block: tell the plugin, with the note-offs
+    //! of flushSound(), at the position the caller set (where the last block ended), without rendering
     if (m_needUpdateState) {
-        processor->process(m_processData);
-        m_needUpdateState = false;
+        processStateChange(true);
     }
 
     processor->setProcessing(false);
