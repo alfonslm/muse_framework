@@ -663,9 +663,18 @@ void CommandShortcutsRegister::deletePreset(const std::string& presetName)
 // FontDaw (shortcut work order v2, A2): skeleton, filled in by the implementation steps.
 std::vector<PresetInfo> CommandShortcutsRegister::presetInfos() const
 {
-    // TODO(FontDaw shortcuts A2, step 2): the base (unless isBaseHidden()), builtInPresetInfos(),
-    // then the user presets read from userPresetsDirPath() (title, parent) sorted by title.
-    return configuration()->builtInPresetInfos();
+    std::vector<PresetInfo> result;
+    if (!configuration()->isBaseHidden()) {
+        result.push_back(PresetInfo()); // the base: id "", titled by the app ("Default")
+    }
+
+    for (const PresetInfo& info : configuration()->builtInPresetInfos()) {
+        result.push_back(info);
+    }
+
+    // TODO(FontDaw shortcuts A2, step 5): then the user presets read from userPresetsDirPath()
+    // (title, parent), sorted by title.
+    return result;
 }
 
 RetVal<std::string> CommandShortcutsRegister::savePresetAs(const std::string& title)

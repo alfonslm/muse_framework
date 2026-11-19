@@ -361,10 +361,21 @@ QVariantList ShortcutsModel::presets() const
     };
 
     QVariantList result;
-    result << makePreset(std::string(), muse::qtrc("shortcuts", "Default"));
+    // FontDaw (shortcut work order v2, A2): the list from presetInfos(), so built-in presets show
+    // their titles and the base can be hidden; plain-name entries keep presetTitle()
+    for (const PresetInfo& info : commandShortcutsRegister()->presetInfos()) {
+        QString title;
+        if (info.id.empty()) {
+            title = muse::qtrc("shortcuts", "Default");
+        } else if (!info.title.isEmpty()) {
+            title = info.title.qTranslated();
+        } else {
+            title = presetTitle(info.id);
+        }
 
-    for (const std::string& name : commandShortcutsRegister()->availablePresets()) {
-        result << makePreset(name, presetTitle(name));
+        QVariantMap preset = makePreset(info.id, title);
+        preset["group"] = QString::fromStdString(info.group);
+        result << preset;
     }
 
     return result;

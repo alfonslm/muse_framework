@@ -20,6 +20,8 @@
  */
 #include "fontdawpresets.h"
 
+#include "log.h"
+
 // FontDaw (shortcut work order v2, A2): skeleton. Each body is filled in by the implementation
 // step named in docs/fontdaw/design/shortcuts/09-layouts-framework.md (FontDawDev), with tests in
 // tests/fontdawpresets_tests.cpp. Until then they leave everything as upstream has it.
@@ -34,11 +36,33 @@ bool fontdaw::isUserPresetId(const std::string& id)
 
 std::vector<PresetInfo> fontdaw::parseBuiltInPresets(const ValList& entries)
 {
-    // TODO(FontDaw shortcuts A2, step 2): object entries
     std::vector<PresetInfo> result;
     for (const Val& entry : entries) {
         PresetInfo info;
-        info.id = entry.toString();
+        if (entry.type() == Val::Type::Map) {
+            const ValMap map = entry.toMap();
+            auto value = [&map](const char* key) {
+                auto it = map.find(key);
+                return it != map.end() ? it->second : Val();
+            };
+            info.id = value("id").toString();
+            const std::string title = value("title").toString();
+            if (!title.empty()) {
+                // translated in the "shortcuts" context, like the scope titles; the app provides the
+                // strings to translators (the cfg file is not read by lupdate)
+                info.title = TranslatableString("shortcuts", String::fromStdString(title));
+            }
+            info.group = value("group").toString();
+            info.complete = value("complete").toBool();
+        } else {
+            info.id = entry.toString();
+        }
+
+        if (info.id.empty() || isUserPresetId(info.id)) {
+            LOGW() << "ignoring a built-in shortcuts preset without an id or with a reserved id: " << info.id;
+            continue;
+        }
+
         result.push_back(info);
     }
     return result;

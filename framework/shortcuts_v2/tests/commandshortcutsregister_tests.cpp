@@ -511,4 +511,46 @@ TEST_F(Shortcuts_CommandShortcutsRegisterTests, DeletePresetRemovesUserFileAndFa
     //! [THEN] The user file is removed and the current preset is switched to default
     EXPECT_FALSE(io::File::exists(userPath("my_preset")));
 }
+
+// FontDaw (shortcut work order v2, A2, step 2): the presets list with metadata
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, PresetInfos_BaseFirstThenBuiltInsInOrder)
+{
+    PresetInfo b;
+    b.id = "shortcuts_b";
+    b.group = "musescore";
+    PresetInfo a;
+    a.id = "shortcuts_a";
+    ON_CALL(*m_configuration, isBaseHidden()).WillByDefault(Return(false));
+    ON_CALL(*m_configuration, builtInPresetInfos()).WillByDefault(Return(std::vector<PresetInfo> { b, a }));
+    initRegister();
+
+    const std::vector<PresetInfo> infos = m_register->presetInfos();
+
+    ASSERT_EQ(infos.size(), 3u);
+    EXPECT_EQ(infos.at(0).id, "");
+    EXPECT_EQ(infos.at(1).id, "shortcuts_b");
+    EXPECT_EQ(infos.at(1).group, "musescore");
+    EXPECT_EQ(infos.at(2).id, "shortcuts_a");
+}
+
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, PresetInfos_BaseHidden)
+{
+    PresetInfo a;
+    a.id = "shortcuts_a";
+    ON_CALL(*m_configuration, isBaseHidden()).WillByDefault(Return(true));
+    ON_CALL(*m_configuration, builtInPresetInfos()).WillByDefault(Return(std::vector<PresetInfo> { a }));
+    initRegister();
+
+    const std::vector<PresetInfo> infos = m_register->presetInfos();
+
+    ASSERT_EQ(infos.size(), 1u);
+    EXPECT_EQ(infos.at(0).id, "shortcuts_a");
+}
+
+// availablePresets() is unchanged: still the configuration's plain ids, without the base
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, AvailablePresets_Unchanged)
+{
+    initRegister();
+    EXPECT_EQ(m_register->availablePresets(), std::vector<std::string> { "shortcuts_azerty" });
+}
 }
