@@ -1,10 +1,10 @@
 /*
  * SPDX-License-Identifier: GPL-3.0-only
  *
- * MuseScore Studio
- * Music Composition & Notation
+ * FontDaw
+ * The notation-first DAW
  *
- * Copyright (C) 2026 MuseScore Limited and others
+ * Copyright (C) 2026 FontDaw contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 3 as
@@ -18,6 +18,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
 #include "windowgeometrycheck.h"
 
 #include <QGuiApplication>

@@ -531,6 +531,10 @@ void DockWindow::saveWindowGeometry()
     /// since the library does not provide the ability to save
     /// and restore only the application geometry.
     const QByteArray state = windowState();
+    if (state.isEmpty()) {
+        LOGW() << "Not saving the window geometry: the layout could not be serialized";
+        return;
+    }
 
     //! NOTE: A window that is being taken down can have no size; saving it would leave the next
     //! start without a usable window, so the last good geometry is kept instead
@@ -572,6 +576,10 @@ void DockWindow::savePageState(const QString& pageName)
     TRACEFUNC;
 
     const QByteArray state = windowState();
+    if (state.isEmpty()) {
+        LOGW() << "Not saving the state of " << pageName << ": the layout could not be serialized";
+        return;
+    }
 
     //! NOTE: Page layouts are restored relative to the main window, so only the size is checked
     const WindowGeometryCheck::Result check = WindowGeometryCheck::check(state, {});
