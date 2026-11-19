@@ -80,7 +80,7 @@ public:
         }
     }
 
-    bool push(const char* text)
+    bool push(const char* text, int64_t timeNs)
     {
         Cell* cell = nullptr;
         size_t pos = m_enqueuePos.load(std::memory_order_relaxed);
@@ -101,11 +101,12 @@ public:
 
         std::strncpy(cell->text, text, LINE_SIZE - 1);
         cell->text[LINE_SIZE - 1] = '\0';
+        cell->timeNs = timeNs;
         cell->sequence.store(pos + 1, std::memory_order_release);
         return true;
     }
 
-    bool pop(char* out)
+    bool pop(char* out, int64_t& timeNs)
     {
         Cell* cell = nullptr;
         size_t pos = m_dequeuePos.load(std::memory_order_relaxed);
@@ -125,6 +126,7 @@ public:
         }
 
         std::memcpy(out, cell->text, LINE_SIZE);
+        timeNs = cell->timeNs;
         cell->sequence.store(pos + QUEUE_MASK + 1, std::memory_order_release);
         return true;
     }
@@ -139,6 +141,7 @@ public:
 private:
     struct Cell {
         std::atomic<size_t> sequence { 0 };
+        int64_t timeNs = 0;
         char text[LINE_SIZE] = {};
     };
 
@@ -180,22 +183,32 @@ Writer s_writer;
 std::mutex s_loadingPluginMutex;
 std::string s_loadingPlugin;
 
-void writeToLog(const char* line, void*)
+int64_t steadyNowNs()
 {
-    LOGI() << "[vst-trace] " << line;
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+//! The time a line was logged, not when the writer wrote it out (it writes every 100 ms):
+//! seconds on the steady clock, to the microsecond, so the lines can be timed against each other
+void writeToLog(const char* line, int64_t timeNs, void*)
+{
+    char time[32];
+    std::snprintf(time, sizeof(time), "t=%lld.%06lld ", static_cast<long long>(timeNs / 1000000000),
+                  static_cast<long long>((timeNs % 1000000000) / 1000));
+    LOGI() << "[vst-trace] " << time << line;
 }
 
 void writerLoop()
 {
     using namespace std::chrono_literals;
     while (s_writerRunning.load(std::memory_order_acquire)) {
-        muse::vst::trace::drainTo(&writeToLog, nullptr);
+        muse::vst::trace::drainWithTimesTo(&writeToLog, nullptr);
         std::this_thread::sleep_for(100ms);
     }
 
     //! At a normal stop the rest is written; at program exit the logger may be gone already
     if (!s_exiting.load(std::memory_order_acquire)) {
-        muse::vst::trace::drainTo(&writeToLog, nullptr);
+        muse::vst::trace::drainWithTimesTo(&writeToLog, nullptr);
     }
 }
 
@@ -286,7 +299,7 @@ void log(const char* format, ...)
     va_end(args);
 
     LineQueue* queue = s_queue.load(std::memory_order_acquire);
-    if (!queue || !queue->push(line)) {
+    if (!queue || !queue->push(line, steadyNowNs())) {
         s_dropped.fetch_add(1, std::memory_order_relaxed);
     }
 }
@@ -302,7 +315,7 @@ size_t droppedCount()
     return s_dropped.load(std::memory_order_relaxed);
 }
 
-size_t drainTo(void (*sink)(const char* line, void* ctx), void* ctx)
+size_t drainWithTimesTo(void (*sink)(const char* line, int64_t timeNs, void* ctx), void* ctx)
 {
     LineQueue* queue = s_queue.load(std::memory_order_acquire);
     if (!queue) {
@@ -310,14 +323,30 @@ size_t drainTo(void (*sink)(const char* line, void* ctx), void* ctx)
     }
 
     char line[LINE_SIZE];
+    int64_t timeNs = 0;
     size_t count = 0;
-    while (queue->pop(line)) {
+    while (queue->pop(line, timeNs)) {
         if (sink) {
-            sink(line, ctx);
+            sink(line, timeNs, ctx);
         }
         ++count;
     }
     return count;
+}
+
+size_t drainTo(void (*sink)(const char* line, void* ctx), void* ctx)
+{
+    struct Plain {
+        void (*sink)(const char*, void*);
+        void* ctx;
+    } plain { sink, ctx };
+
+    return drainWithTimesTo([](const char* line, int64_t, void* p) {
+        const Plain* plain = static_cast<const Plain*>(p);
+        if (plain->sink) {
+            plain->sink(line, plain->ctx);
+        }
+    }, &plain);
 }
 
 void setLoadingPlugin(const std::string& name)
