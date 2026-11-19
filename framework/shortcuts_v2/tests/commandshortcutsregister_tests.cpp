@@ -657,4 +657,71 @@ TEST_F(Shortcuts_CommandShortcutsRegisterTests, UserEditKeepsThePresetScope)
     EXPECT_EQ(a->scope, "OTHER");
     EXPECT_EQ(a->sequences, seqs({ "Ctrl+Alt+A" }));
 }
+
+// FontDaw (shortcut work order v2, A2, step 4b): complete built-in presets
+namespace {
+std::vector<PresetInfo> completePreset(const std::string& id)
+{
+    PresetInfo info;
+    info.id = id;
+    info.complete = true;
+    return { info };
+}
+}
+
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, CompletePreset_DropsBaseKeysKeepsScopes)
+{
+    //! [GIVEN] A complete preset that lists only test://b
+    ON_CALL(*m_configuration, builtInPresetInfos()).WillByDefault(Return(completePreset("fontdaw_complete")));
+    m_currentPresetName = "fontdaw_complete";
+
+    //! [WHEN] The register is initialized
+    initRegister();
+
+    //! [THEN] Only test://b has a key; the other commands keep their rows and the base's scopes
+    const ShortcutList& shortcuts = m_register->shortcuts();
+    const Shortcut* b = findShortcut(shortcuts, Command("test://b"));
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->sequences, seqs({ "X" }));
+
+    for (const char* name : { "test://a", "test://c" }) {
+        const Shortcut* sc = findShortcut(shortcuts, Command(name));
+        ASSERT_NE(sc, nullptr) << name;
+        EXPECT_TRUE(sc->sequences.empty()) << name;
+        EXPECT_EQ(sc->scope, "TEST") << name;
+    }
+    const Shortcut* d = findShortcut(shortcuts, Command("test://d"));
+    ASSERT_NE(d, nullptr);
+    EXPECT_TRUE(d->sequences.empty());
+    EXPECT_EQ(d->scope, "OTHER");
+}
+
+// On a Mac the platform diff is applied first; a complete preset replaces its keys too, so the
+// app ships a macOS file of its own for a complete preset
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, CompletePreset_ReplacesThePlatformDiff)
+{
+    ON_CALL(*m_configuration, defaultShortcutsName()).WillByDefault(Return("shortcuts_mac"));
+    ON_CALL(*m_configuration, builtInPresetInfos()).WillByDefault(Return(completePreset("fontdaw_complete")));
+    m_currentPresetName = "fontdaw_complete";
+    initRegister();
+
+    const Shortcut* b = findShortcut(m_register->shortcuts(), Command("test://b"));
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->sequences, seqs({ "X" })); // not the platform diff's Alt+B
+}
+
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, CompletePreset_UserEditsOnTop)
+{
+    ON_CALL(*m_configuration, builtInPresetInfos()).WillByDefault(Return(completePreset("fontdaw_complete")));
+    m_currentPresetName = "fontdaw_complete";
+    writeUserFile("fontdaw_complete", R"([ { "scope": "TEST", "shortcuts": [ { "command": "test://a", "sequences": ["Ctrl+Q"] } ] } ])");
+    initRegister();
+
+    const Shortcut* a = findShortcut(m_register->shortcuts(), Command("test://a"));
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->sequences, seqs({ "Ctrl+Q" }));
+    const Shortcut* b = findShortcut(m_register->shortcuts(), Command("test://b"));
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->sequences, seqs({ "X" }));
+}
 }

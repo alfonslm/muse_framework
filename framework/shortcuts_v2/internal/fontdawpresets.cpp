@@ -88,9 +88,35 @@ std::string fontdaw::makeUserPresetId(const std::string&, const std::vector<std:
     return std::string();
 }
 
-void fontdaw::applyCompletePreset(ShortcutList&, const ShortcutList&)
+void fontdaw::applyCompletePreset(ShortcutList& defaults, const ShortcutList& preset)
 {
-    // TODO(FontDaw shortcuts A2, step 4b)
+    // rows, scopes and auto-repeat stay those of base + platform; their keys go
+    for (Shortcut& sc : defaults) {
+        sc.sequences.clear();
+    }
+
+    movePresetScopes(defaults, preset);
+
+    for (const Shortcut& entry : preset) {
+        auto it = std::find_if(defaults.begin(), defaults.end(), [&entry](const Shortcut& sc) {
+            return sc.command == entry.command;
+        });
+        if (it != defaults.end()) {
+            it->sequences = entry.sequences;
+        } else {
+            defaults.push_back(entry); // a command the base doesn't list: as the preset writes it
+        }
+    }
+}
+
+bool fontdaw::isCompletePreset(const std::string& presetId, const std::vector<PresetInfo>& builtIns)
+{
+    for (const PresetInfo& info : builtIns) {
+        if (info.id == presetId) {
+            return info.complete;
+        }
+    }
+    return false;
 }
 
 void fontdaw::movePresetScopes(ShortcutList& base, const ShortcutList& preset)

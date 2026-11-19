@@ -76,6 +76,9 @@ std::string makeUserPresetId(const std::string& title, const std::vector<std::st
 //! `defaults` (base + platform), drop all their sequences, then apply `preset`.
 void applyCompletePreset(ShortcutList& defaults, const ShortcutList& preset);
 
+//! Whether \p presetId is a built-in preset marked "complete" in \p builtIns.
+bool isCompletePreset(const std::string& presetId, const std::vector<PresetInfo>& builtIns);
+
 //! "A preset's scope wins" (choice 4): before upstream's mergeShortcuts() applies a built-in preset,
 //! move each base command the preset lists under another (non-empty) scope into that scope. The
 //! merge then keeps it there, and its same-scope clash rule works on the new scope, whatever the

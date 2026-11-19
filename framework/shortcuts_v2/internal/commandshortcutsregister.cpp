@@ -91,8 +91,7 @@ void CommandShortcutsRegister::reload(bool onlyDef)
 
         std::string presetName = configuration()->currentShortcutsPresetName();
         if (!presetName.empty()) {
-            // TODO(FontDaw shortcuts A2, steps 4b and 5): one hook. A complete built-in preset goes
-            // through fontdaw::applyCompletePreset() instead of the diff. A user preset applies its
+            // TODO(FontDaw shortcuts A2, step 5): one hook. A user preset applies its
             // parent here, and its own file is then read as the user file below. A missing or
             // unreadable user preset or parent falls back to the base and keeps the file.
             applyShortcutsDiff(presetName, m_defaultShortcuts);
@@ -196,6 +195,10 @@ void CommandShortcutsRegister::applyShortcutsDiff(const std::string& shortcutsNa
         return;
     }
     fontdaw::dropUnregistered(diff, *commandsRegister()); // FontDaw (A2): a built-in preset file
+    if (fontdaw::isCompletePreset(shortcutsName, configuration()->builtInPresetInfos())) { // FontDaw (A2)
+        fontdaw::applyCompletePreset(shortcuts, diff);
+        return;
+    }
     fontdaw::movePresetScopes(shortcuts, diff); // FontDaw (A2): the preset's scope wins
 
     mergeShortcuts(diff, shortcuts);
