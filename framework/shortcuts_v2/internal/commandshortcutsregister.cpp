@@ -128,6 +128,7 @@ void CommandShortcutsRegister::reload(bool onlyDef)
                 ok = fontdaw::isUserPresetId(activeShortcutsName()) // FontDaw (A2): a user preset's own file
                      ? fontdaw::readUserPresetShortcuts(m_shortcuts, userPath, *configuration())
                      : readFromFile(m_shortcuts, userPath);
+                fontdaw::applyRenames(m_shortcuts, configuration()->commandRenames()); // FontDaw (A2): in memory
             }
         } else {
             ok = false;

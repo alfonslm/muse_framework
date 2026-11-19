@@ -347,9 +347,18 @@ void fontdaw::movePresetScopes(ShortcutList& base, const ShortcutList& preset)
     }
 }
 
-void fontdaw::applyRenames(ShortcutList&, const std::map<std::string, std::string>&)
+void fontdaw::applyRenames(ShortcutList& shortcuts, const std::map<std::string, std::string>& renames)
 {
-    // TODO(FontDaw shortcuts A2, step 6)
+    if (renames.empty()) {
+        return;
+    }
+
+    for (Shortcut& sc : shortcuts) {
+        auto it = renames.find(sc.command.toString());
+        if (it != renames.end()) {
+            sc.command = rcommand::Command(it->second);
+        }
+    }
 }
 
 bool fontdaw::isRegistered(const rcommand::Command& command, const rcommand::ICommandsRegister& commands)

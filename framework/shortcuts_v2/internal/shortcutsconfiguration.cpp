@@ -148,6 +148,11 @@ io::path_t ShortcutsConfiguration::userPresetsDirPath() const
 
 std::map<std::string, std::string> ShortcutsConfiguration::commandRenames() const
 {
-    // TODO(FontDaw shortcuts A2, step 6): read the "command_renames" object (old URI -> new URI).
-    return {};
+    std::map<std::string, std::string> renames;
+    for (const auto& [oldUri, newUri] : m_config.value("command_renames").toMap()) {
+        if (!oldUri.empty() && !newUri.toString().empty()) {
+            renames[oldUri] = newUri.toString();
+        }
+    }
+    return renames;
 }

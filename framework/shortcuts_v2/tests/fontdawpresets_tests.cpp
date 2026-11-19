@@ -152,3 +152,21 @@ TEST(Shortcuts_FontDawPresetsTests, ValidTitle)
     EXPECT_EQ(fontdaw::validTitle(std::string(65, 'x')), "");
 }
 
+TEST(Shortcuts_FontDawPresetsTests, ApplyRenames)
+{
+    ShortcutList list;
+    Shortcut a;
+    a.command = rcommand::Command("test://old");
+    a.sequences = { "X" };
+    Shortcut b;
+    b.command = rcommand::Command("test://kept");
+    list = { a, b };
+
+    fontdaw::applyRenames(list, { { "test://old", "test://new" } });
+
+    ASSERT_EQ(list.size(), 2u);
+    EXPECT_EQ(list.at(0).command, rcommand::Command("test://new"));
+    EXPECT_EQ(list.at(0).sequences, std::vector<std::string> { "X" });
+    EXPECT_EQ(list.at(1).command, rcommand::Command("test://kept"));
+}
+

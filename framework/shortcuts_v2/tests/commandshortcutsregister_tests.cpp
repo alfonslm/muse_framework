@@ -987,4 +987,27 @@ TEST_F(Shortcuts_FontDawUserPresetTests, PresetsChangedOnResourceChanged)
     m_resourceChanged.send("CommandShortcuts");
     EXPECT_EQ(presetsChanged, 1);
 }
+
+// FontDaw (shortcut work order v2, A2, step 6): a command renamed upstream keeps the user's key
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, RenamesAppliedInMemoryOnRead)
+{
+    //! [GIVEN] The user's file names test://old, which upstream renamed to test://a
+    ON_CALL(*m_configuration, commandRenames())
+    .WillByDefault(Return(std::map<std::string, std::string> { { "test://old", "test://a" } }));
+    const std::string content = R"([ { "scope": "TEST", "shortcuts": [ { "command": "test://old", "sequences": ["Ctrl+O"] } ] } ])";
+    writeUserFile("shortcuts", content);
+
+    //! [WHEN] The register is initialized
+    initRegister();
+
+    //! [THEN] test://a has the user's key, and the file is not rewritten
+    const Shortcut* a = findShortcut(m_register->shortcuts(), Command("test://a"));
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->sequences, seqs({ "Ctrl+O" }));
+    EXPECT_EQ(findShortcut(m_register->shortcuts(), Command("test://old")), nullptr);
+
+    ByteArray data;
+    ASSERT_TRUE(io::File::readFile(userPath("shortcuts"), data));
+    EXPECT_EQ(std::string(data.constChar(), data.size()), content);
+}
 }
