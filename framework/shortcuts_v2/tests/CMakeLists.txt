@@ -24,6 +24,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mocks/shortcutsconfigurationmock.h
     ${CMAKE_CURRENT_LIST_DIR}/commandshortcutsregister_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/shortcutsresolver_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/fontdawpresets_tests.cpp # FontDaw (A2)
 )
 
 set(MODULE_TEST_LINK

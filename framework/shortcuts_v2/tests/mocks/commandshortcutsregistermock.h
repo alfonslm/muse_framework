@@ -53,6 +53,10 @@ public:
     MOCK_METHOD(bool, canDeletePreset, (const std::string&), (const, override));
     MOCK_METHOD(void, deletePreset, (const std::string&), (override));
 
+    MOCK_METHOD(std::vector<PresetInfo>, presetInfos, (), (const, override));
+    MOCK_METHOD(RetVal<std::string>, savePresetAs, (const std::string&), (override));
+    MOCK_METHOD(async::Notification, presetsChanged, (), (const, override));
+
     MOCK_METHOD(void, reload, (bool), (override));
 };
 }

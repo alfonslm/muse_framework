@@ -59,6 +59,12 @@ public:
     io::path_t commandShortcutsUserAppDataPath(const std::string& shortcutsName) const override;
     io::path_t commandShortcutsAppDataPath(const std::string& shortcutsName) const override;
 
+    // FontDaw (A2)
+    std::vector<PresetInfo> builtInPresetInfos() const override;
+    bool isBaseHidden() const override;
+    io::path_t userPresetsDirPath() const override;
+    std::map<std::string, std::string> commandRenames() const override;
+
 private:
     io::path_t userShortcutsDirPath() const;
 

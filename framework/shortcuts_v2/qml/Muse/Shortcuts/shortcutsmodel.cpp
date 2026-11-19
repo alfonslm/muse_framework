@@ -31,6 +31,8 @@
 
 #include "log.h"
 
+#include "internal/fontdawpresets.h" // FontDaw (A2)
+
 using namespace muse::shortcuts;
 using namespace muse::ui;
 using namespace muse::rcommand;
@@ -100,6 +102,12 @@ void ShortcutsModel::load()
             continue;
         }
 
+        // FontDaw (A2): a user file may name a command that is not registered (yet): it keeps its
+        // key in the file, but has no row
+        if (!fontdaw::isRegistered(shortcut.command, *commandsRegister())) {
+            continue;
+        }
+
         const CommandInfo& info = commandsRegister()->commandInfo(shortcut.command);
 
         Item item;
@@ -131,6 +139,11 @@ void ShortcutsModel::load()
 
     commandShortcutsRegister()->currentPresetNameChanged().onReceive(this, [this](const std::string&) {
         emit currentPresetNameChanged();
+    }, async::Asyncable::Mode::SetReplace);
+
+    // FontDaw (A2): a preset saved or deleted here or in another window
+    commandShortcutsRegister()->presetsChanged().onNotify(this, [this]() {
+        emit presetsChanged();
     }, async::Asyncable::Mode::SetReplace);
 
     std::sort(m_items.begin(), m_items.end(), [](const Item& i1, const Item& i2) {
@@ -361,10 +374,21 @@ QVariantList ShortcutsModel::presets() const
     };
 
     QVariantList result;
-    result << makePreset(std::string(), muse::qtrc("shortcuts", "Default"));
+    // FontDaw (shortcut work order v2, A2): the list from presetInfos(), so built-in presets show
+    // their titles and the base can be hidden; plain-name entries keep presetTitle()
+    for (const PresetInfo& info : commandShortcutsRegister()->presetInfos()) {
+        QString title;
+        if (info.id.empty()) {
+            title = muse::qtrc("shortcuts", "Default");
+        } else if (!info.title.isEmpty()) {
+            title = info.title.qTranslated();
+        } else {
+            title = presetTitle(info.id);
+        }
 
-    for (const std::string& name : commandShortcutsRegister()->availablePresets()) {
-        result << makePreset(name, presetTitle(name));
+        QVariantMap preset = makePreset(info.id, title);
+        preset["group"] = QString::fromStdString(info.group);
+        result << preset;
     }
 
     return result;

@@ -1,0 +1,11 @@
+[
+    {
+        "scope": "OTHER",
+        "shortcuts": [
+            {
+                "command": "test://a",
+                "sequences": ["D"]
+            }
+        ]
+    }
+]

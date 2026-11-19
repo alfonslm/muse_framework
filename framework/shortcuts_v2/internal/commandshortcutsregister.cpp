@@ -20,6 +20,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "commandshortcutsregister.h"
+#include "fontdawpresets.h" // FontDaw (A2)
+#include "global/io/dir.h" // FontDaw (A2)
 
 #include "global/containers.h"
 #include "global/stringutils.h"
@@ -60,6 +62,7 @@ void CommandShortcutsRegister::init()
     multiwindowsProvider()->resourceChanged().onReceive(this, [this](const std::string& resourceName) {
         if (resourceName == COMMAND_SHORTCUTS_TAG) {
             reload();
+            m_presetsChanged.notify(); // FontDaw (A2): another window may have added or deleted a preset
         }
     });
 
@@ -88,7 +91,7 @@ void CommandShortcutsRegister::reload(bool onlyDef)
             applyShortcutsDiff(defaultName, m_defaultShortcuts);
         }
 
-        std::string presetName = configuration()->currentShortcutsPresetName();
+        std::string presetName = fontdaw::presetToApply(configuration()->currentShortcutsPresetName(), *configuration()); // FontDaw (A2): a user preset applies its parent
         if (!presetName.empty()) {
             applyShortcutsDiff(presetName, m_defaultShortcuts);
         }
@@ -122,7 +125,10 @@ void CommandShortcutsRegister::reload(bool onlyDef)
             } else {
                 //! NOTE The user shortcut file may change, so we need to lock it
                 mi::ReadResourceLockGuard guard(multiwindowsProvider(), COMMAND_SHORTCUTS_TAG);
-                ok = readFromFile(m_shortcuts, userPath);
+                ok = fontdaw::isUserPresetId(activeShortcutsName()) // FontDaw (A2): a user preset's own file
+                     ? fontdaw::readUserPresetShortcuts(m_shortcuts, userPath, *configuration())
+                     : readFromFile(m_shortcuts, userPath);
+                fontdaw::applyRenames(m_shortcuts, configuration()->commandRenames()); // FontDaw (A2): in memory
             }
         } else {
             ok = false;
@@ -177,6 +183,9 @@ std::string CommandShortcutsRegister::activeShortcutsName() const
 
 io::path_t CommandShortcutsRegister::userShortcutsPath() const
 {
+    if (fontdaw::isUserPresetId(activeShortcutsName())) { // FontDaw (A2): one file per user preset
+        return fontdaw::userPresetPath(*configuration(), activeShortcutsName());
+    }
     return configuration()->commandShortcutsUserAppDataPath(activeShortcutsName());
 }
 
@@ -186,6 +195,12 @@ void CommandShortcutsRegister::applyShortcutsDiff(const std::string& shortcutsNa
     if (!readFromFile(diff, configuration()->commandShortcutsAppDataPath(shortcutsName))) {
         return;
     }
+    fontdaw::dropUnregistered(diff, *commandsRegister()); // FontDaw (A2): a built-in preset file
+    if (fontdaw::isCompletePreset(shortcutsName, configuration()->builtInPresetInfos())) { // FontDaw (A2)
+        fontdaw::applyCompletePreset(shortcuts, diff);
+        return;
+    }
+    fontdaw::movePresetScopes(shortcuts, diff); // FontDaw (A2): the preset's scope wins
 
     mergeShortcuts(diff, shortcuts);
     shortcuts = diff;
@@ -497,7 +512,10 @@ Ret CommandShortcutsRegister::updateShortcuts(const ShortcutList& shortcuts)
     ShortcutList diff = makeDiff(needToWrite, m_defaultShortcuts);
 
     bool ok = false;
-    if (diff.empty()) {
+    if (fontdaw::isUserPresetId(activeShortcutsName())) { // FontDaw (A2): never removed when emptied
+        mi::WriteResourceLockGuard guard(multiwindowsProvider(), COMMAND_SHORTCUTS_TAG);
+        ok = fontdaw::writeUserPresetShortcuts(userShortcutsPath(), diff, *configuration());
+    } else if (diff.empty()) {
         ok = removeUserFile();
     } else {
         ok = writeToFile(diff, userShortcutsPath());
@@ -513,7 +531,12 @@ Ret CommandShortcutsRegister::updateShortcuts(const ShortcutList& shortcuts)
 void CommandShortcutsRegister::resetShortcuts()
 {
     //! NOTE Even if the removal failed, reload to keep the state in sync with the file
-    removeUserFile();
+    if (fontdaw::isUserPresetId(activeShortcutsName())) { // FontDaw (A2): a user preset goes back to its parent
+        mi::WriteResourceLockGuard guard(multiwindowsProvider(), COMMAND_SHORTCUTS_TAG);
+        fontdaw::writeUserPresetShortcuts(userShortcutsPath(), ShortcutList(), *configuration());
+    } else {
+        removeUserFile();
+    }
     reload();
 }
 
@@ -562,7 +585,17 @@ Ret CommandShortcutsRegister::importFromFile(const io::path_t& filePath)
         return make_ret(Ret::Code::UnknownError);
     }
 
-    {
+    if (fontdaw::isUserPresetId(activeShortcutsName())) { // FontDaw (A2): replace only the preset's keys
+        ShortcutList imported;
+        if (!readFromFile(imported, filePath)) {
+            return make_ret(Ret::Code::UnknownError);
+        }
+        mi::WriteResourceLockGuard guard(multiwindowsProvider(), COMMAND_SHORTCUTS_TAG);
+        Ret ret = fontdaw::writeUserPresetShortcuts(userPath, imported, *configuration());
+        if (!ret) {
+            return ret;
+        }
+    } else {
         mi::WriteResourceLockGuard guard(multiwindowsProvider(), COMMAND_SHORTCUTS_TAG);
         Ret ret = io::File::copy(filePath, userPath, true);
         if (!ret) {
@@ -623,7 +656,11 @@ void CommandShortcutsRegister::deletePreset(const std::string& presetName)
         return;
     }
 
-    io::path_t path = configuration()->commandShortcutsUserAppDataPath(presetName);
+    // FontDaw (A2): a user preset's file, and its parent to fall back to
+    const bool isUser = fontdaw::isUserPresetId(presetName);
+    const std::string fallback = isUser ? fontdaw::presetToApply(presetName, *configuration()) : std::string();
+    io::path_t path = isUser ? fontdaw::userPresetPath(*configuration(), presetName)
+                      : configuration()->commandShortcutsUserAppDataPath(presetName);
     if (path.empty()) {
         return;
     }
@@ -640,6 +677,73 @@ void CommandShortcutsRegister::deletePreset(const std::string& presetName)
     }
 
     if (currentPresetName() == presetName) {
-        setCurrentPresetName(std::string());
+        setCurrentPresetName(fallback);
     }
+    m_presetsChanged.notify(); // FontDaw (A2)
+}
+
+// FontDaw (shortcut work order v2, A2): the presets list and "Save as…" (internal/fontdawpresets.h).
+std::vector<PresetInfo> CommandShortcutsRegister::presetInfos() const
+{
+    std::vector<PresetInfo> result;
+    if (!configuration()->isBaseHidden()) {
+        result.push_back(PresetInfo()); // the base: id "", titled by the app ("Default")
+    }
+
+    for (const PresetInfo& info : configuration()->builtInPresetInfos()) {
+        result.push_back(info);
+    }
+
+    for (const PresetInfo& info : fontdaw::listUserPresets(*configuration())) {
+        result.push_back(info);
+    }
+
+    return result;
+}
+
+RetVal<std::string> CommandShortcutsRegister::savePresetAs(const std::string& title)
+{
+    fontdaw::UserPresetFile file;
+    file.title = fontdaw::validTitle(title);
+    if (file.title.empty()) {
+        return RetVal<std::string>(make_ret(Ret::Code::UnknownError));
+    }
+
+    // the parent: the current built-in preset, or the current user preset's parent; the defaults
+    // (m_defaultShortcuts) are then the parent's resolved list
+    const std::string current = configuration()->currentShortcutsPresetName();
+    file.parent = fontdaw::presetToApply(current, *configuration());
+    const std::vector<std::string> builtIns = fontdaw::builtInIds(*configuration());
+    if (std::find(builtIns.begin(), builtIns.end(), file.parent) == builtIns.end()) {
+        return RetVal<std::string>(make_ret(Ret::Code::UnknownError)); // the base can't be a parent
+    }
+
+    ShortcutList needToWrite = filterAndUpdateAdditionalShortcuts(m_shortcuts);
+    file.shortcuts = makeDiff(needToWrite, m_defaultShortcuts);
+
+    std::vector<std::string> taken = builtIns;
+    taken.push_back(DEFAULT_SHORTCUTS_NAME);
+    taken.push_back(configuration()->defaultShortcutsName());
+    for (const PresetInfo& info : fontdaw::listUserPresets(*configuration())) {
+        taken.push_back(info.id);
+    }
+    const std::string id = fontdaw::makeUserPresetId(file.title, taken);
+
+    {
+        mi::WriteResourceLockGuard guard(multiwindowsProvider(), COMMAND_SHORTCUTS_TAG);
+        io::Dir::mkpath(configuration()->userPresetsDirPath());
+        Ret ret = fontdaw::writeUserPreset(fontdaw::userPresetPath(*configuration(), id), file);
+        if (!ret) {
+            return RetVal<std::string>(ret);
+        }
+    }
+
+    m_presetsChanged.notify();
+    setCurrentPresetName(id);
+    return RetVal<std::string>::make_ok(id);
+}
+
+async::Notification CommandShortcutsRegister::presetsChanged() const
+{
+    return m_presetsChanged;
 }

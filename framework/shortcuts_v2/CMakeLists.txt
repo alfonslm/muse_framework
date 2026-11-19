@@ -37,6 +37,8 @@ target_sources(muse_shortcuts PRIVATE
 
     internal/commandshortcutsregister.cpp
     internal/commandshortcutsregister.h
+    internal/fontdawpresets.cpp # FontDaw (A2)
+    internal/fontdawpresets.h # FontDaw (A2)
     internal/shortcutscontroller.cpp
     internal/shortcutscontroller.h
     internal/shortcutsconfiguration.cpp

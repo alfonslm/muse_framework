@@ -34,8 +34,21 @@
 #include "rcommand/commandtypes.h"
 
 #include "global/logstream.h"
+#include "global/types/translatablestring.h"
 
 namespace muse::shortcuts {
+//! FontDaw (shortcut work order v2, A2): a preset as the presets list shows it
+//! (internal/fontdawpresets.h). Built-in presets come from shortcuts.cfg; user presets ("Save as…")
+//! from <user data>/shortcuts/presets/.
+struct PresetInfo {
+    std::string id;           //! as availablePresets() gives it; "" is the base
+    TranslatableString title; //! empty for upstream's plain-name entries: presetTitle() applies
+    std::string group;        //! the heading it is listed under, e.g. "fontdaw", "musescore"
+    std::string parent;       //! user presets: the built-in id it is a diff on
+    bool complete = false;    //! built-in: a whole key set (fontdaw::applyCompletePreset)
+    bool isUser = false;      //! made with "Save as…"; deletable
+};
+
 struct Shortcut
 {
     rcommand::Command command;

@@ -44,5 +44,10 @@ public:
 
     MOCK_METHOD(io::path_t, commandShortcutsUserAppDataPath, (const std::string&), (const, override));
     MOCK_METHOD(io::path_t, commandShortcutsAppDataPath, (const std::string&), (const, override));
+
+    MOCK_METHOD(std::vector<PresetInfo>, builtInPresetInfos, (), (const, override));
+    MOCK_METHOD(bool, isBaseHidden, (), (const, override));
+    MOCK_METHOD(io::path_t, userPresetsDirPath, (), (const, override));
+    MOCK_METHOD((std::map<std::string, std::string>), commandRenames, (), (const, override));
 };
 }

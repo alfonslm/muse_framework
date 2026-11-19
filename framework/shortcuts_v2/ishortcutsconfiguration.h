@@ -30,6 +30,10 @@
 #include "types/retval.h"
 #include "async/channel.h"
 
+#include <map>
+
+#include "shortcutstypes.h"
+
 namespace muse::shortcuts {
 class IShortcutsConfiguration : MODULE_GLOBAL_INTERFACE
 {
@@ -53,5 +57,15 @@ public:
 
     virtual io::path_t commandShortcutsUserAppDataPath(const std::string& shortcutsName) const = 0;
     virtual io::path_t commandShortcutsAppDataPath(const std::string& shortcutsName) const = 0;
+
+    // FontDaw (shortcut work order v2, A2)
+    //! "command_shortcuts_presets" with metadata (fontdaw::parseBuiltInPresets).
+    virtual std::vector<PresetInfo> builtInPresetInfos() const = 0;
+    //! "command_shortcuts_hide_base": the bare base is not offered in the presets list (A3).
+    virtual bool isBaseHidden() const = 0;
+    //! <user data>/shortcuts/presets: one file per user preset, apart from the per-preset edit files.
+    virtual io::path_t userPresetsDirPath() const = 0;
+    //! "command_renames": old command URI -> new, applied in memory to user lists as they are read.
+    virtual std::map<std::string, std::string> commandRenames() const = 0;
 };
 }
