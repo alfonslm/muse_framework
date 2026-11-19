@@ -445,6 +445,13 @@ void VstAudioClient::setTransportPosition(samples_t positionSamples, const Music
 
 bool VstAudioClient::isLocateWhilePlaying(samples_t position) const
 {
+    //! NOTE Only an instrument's position runs on block by block. An effect is given the playhead's
+    //! position, which stands still in an offline export, and a silent aux chain is skipped, so its
+    //! position "jumps" when signal returns: neither is a locate.
+    if (m_type != PluginType::Instrument) {
+        return false;
+    }
+
     if ((m_processContext.state & VstProcessContext::kPlaying) == 0) {
         return false;
     }
@@ -462,10 +469,14 @@ bool VstAudioClient::isLocateWhilePlaying(samples_t position) const
         return false;
     }
 
-    //! A loop jump back to the cycle start is expected by the plugin: the cycle is in the context
+    //! A loop jump is expected by the plugin, which knows the cycle: the last block reached the cycle end,
+    //! and playback goes on inside the cycle (at its start plus the overshoot)
     static constexpr double QUARTERS_TOLERANCE = 1e-3;
     const bool musicValid = (m_processContext.state & VstProcessContext::kProjectTimeMusicValid) != 0;
-    if (m_hasCycle && musicValid && std::fabs(m_processContext.projectTimeMusic - m_cycleStartQuarters) < QUARTERS_TOLERANCE) {
+    if (m_hasCycle && musicValid && m_lastCall.hasEndQuarters
+        && m_lastCall.endQuarters >= m_cycleEndQuarters - QUARTERS_TOLERANCE
+        && m_processContext.projectTimeMusic >= m_cycleStartQuarters - QUARTERS_TOLERANCE
+        && m_processContext.projectTimeMusic < m_cycleEndQuarters) {
         return false;
     }
 
@@ -478,6 +489,14 @@ void VstAudioClient::rememberCall(samples_t position, samples_t samples)
     m_lastCall.playing = (m_processContext.state & VstProcessContext::kPlaying) != 0;
     m_lastCall.position = position;
     m_lastCall.nextPosition = position + samples;
+
+    //! Where the call ended in quarter notes, at the call's tempo
+    const uint32_t needed = VstProcessContext::kProjectTimeMusicValid | VstProcessContext::kTempoValid;
+    m_lastCall.hasEndQuarters = (m_processContext.state & needed) == needed && m_processContext.sampleRate > 0;
+    if (m_lastCall.hasEndQuarters) {
+        const double secs = static_cast<double>(samples) / m_processContext.sampleRate;
+        m_lastCall.endQuarters = m_processContext.projectTimeMusic + secs * m_processContext.tempo / 60.0;
+    }
 }
 
 void VstAudioClient::processStateChange(bool withEvents)
