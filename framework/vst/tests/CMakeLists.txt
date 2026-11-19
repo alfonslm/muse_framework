@@ -22,6 +22,7 @@ set(MODULE_TEST muse_vst_tests)
 set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/vsttrace_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/vstprocesscontext_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/vstaudioclient_tests.cpp
 )
 
 set(MODULE_TEST_INCLUDE ${CMAKE_CURRENT_LIST_DIR}/..)

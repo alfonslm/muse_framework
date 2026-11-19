@@ -181,6 +181,17 @@ void VstSynthesiser::setMode(const muse::audio::ProcessMode mode)
     bool isActive = isModePlaying(mode);
     m_sequencer.setActive(isActive);
     toggleVolumeGain(isActive);
+
+    //! NOTE When the transport stops, the plugin is told so at the position where the last block ended
+    //! (m_currentPosition has run on to there), not at the start of the last block
+    if (!isActive && m_currentPosition.isValid()) {
+        audio::MusicalPosition musicalPosition;
+        if (m_playheadPosition) {
+            musicalPosition = m_playheadPosition->musicalPosition(m_currentPosition);
+        }
+        m_vstAudioClient->setTransportPosition(m_currentPosition.samples(), musicalPosition);
+    }
+
     m_vstAudioClient->setIsPlaying(isActive);
     m_vstAudioClient->setIsActive(isActive);
 

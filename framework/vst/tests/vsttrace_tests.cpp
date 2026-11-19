@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <string>
 #include <thread>
 #include <vector>
@@ -307,4 +308,21 @@ TEST_F(Vst_TraceTests, StateIntoFixedBuffer)
     char tiny[6];
     trace::formatProcessContextState(ProcessContext::kPlaying | ProcessContext::kTempoValid, tiny, sizeof(tiny));
     EXPECT_EQ(std::string(tiny).size(), 5u);
+}
+
+//! Each line keeps the time it was logged, not the time it is written out
+TEST_F(Vst_TraceTests, LinesKeepTheirLoggingTime)
+{
+    trace::log("first");
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    trace::log("second");
+
+    std::vector<int64_t> times;
+    trace::drainWithTimesTo([](const char*, int64_t timeNs, void* ctx) {
+        static_cast<std::vector<int64_t>*>(ctx)->push_back(timeNs);
+    }, &times);
+
+    ASSERT_EQ(times.size(), 2u);
+    EXPECT_GT(times[0], 0);
+    EXPECT_GE(times[1] - times[0], 15 * 1000 * 1000); // at least 15 ms apart
 }

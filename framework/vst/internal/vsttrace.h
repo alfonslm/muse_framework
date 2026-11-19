@@ -73,6 +73,9 @@ size_t droppedCount();
 //! Write the waiting lines through `sink` instead of the log. For tests; returns how many.
 size_t drainTo(void (*sink)(const char* line, void* ctx), void* ctx);
 
+//! The same with the time each line was logged (steady clock, nanoseconds), as the writer uses it
+size_t drainWithTimesTo(void (*sink)(const char* line, int64_t timeNs, void* ctx), void* ctx);
+
 //! The name of the plugin being loaded, so that host-context queries can be attributed. Main thread.
 void setLoadingPlugin(const std::string& name);
 std::string loadingPlugin();
