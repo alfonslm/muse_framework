@@ -79,12 +79,12 @@ public:
     // IComponent
     tresult PLUGIN_API getControllerClassId(TUID) override { return kNotImplemented; }
     tresult PLUGIN_API setIoMode(IoMode) override { return kResultOk; }
-    int32 PLUGIN_API getBusCount(MediaType type, BusDirection dir) override
+    int32 PLUGIN_API getBusCount(MediaType type, Steinberg::Vst::BusDirection dir) override
     {
         return type == kAudio && dir == kOutput ? 1 : 0;
     }
 
-    tresult PLUGIN_API getBusInfo(MediaType type, BusDirection dir, int32 index, BusInfo& bus) override
+    tresult PLUGIN_API getBusInfo(MediaType type, Steinberg::Vst::BusDirection dir, int32 index, BusInfo& bus) override
     {
         if (type != kAudio || dir != kOutput || index != 0) {
             return kInvalidArgument;
@@ -98,7 +98,7 @@ public:
     }
 
     tresult PLUGIN_API getRoutingInfo(RoutingInfo&, RoutingInfo&) override { return kNotImplemented; }
-    tresult PLUGIN_API activateBus(MediaType, BusDirection, int32, TBool) override { return kResultOk; }
+    tresult PLUGIN_API activateBus(MediaType, Steinberg::Vst::BusDirection, int32, TBool) override { return kResultOk; }
     tresult PLUGIN_API setActive(TBool state) override
     {
         lifecycle.push_back(state ? "setActive(true)" : "setActive(false)");
@@ -110,7 +110,7 @@ public:
 
     // IAudioProcessor
     tresult PLUGIN_API setBusArrangements(SpeakerArrangement*, int32, SpeakerArrangement*, int32) override { return kResultOk; }
-    tresult PLUGIN_API getBusArrangement(BusDirection, int32, SpeakerArrangement& arr) override
+    tresult PLUGIN_API getBusArrangement(Steinberg::Vst::BusDirection, int32, SpeakerArrangement& arr) override
     {
         arr = SpeakerArr::kStereo;
         return kResultOk;
