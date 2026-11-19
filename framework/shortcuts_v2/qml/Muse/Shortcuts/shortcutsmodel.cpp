@@ -31,6 +31,8 @@
 
 #include "log.h"
 
+#include "internal/fontdawpresets.h" // FontDaw (A2)
+
 using namespace muse::shortcuts;
 using namespace muse::ui;
 using namespace muse::rcommand;
@@ -97,6 +99,12 @@ void ShortcutsModel::load()
 
     for (const Shortcut& shortcut : commandShortcutsRegister()->shortcuts()) {
         if (shortcut.command == NONE_COMMAND) {
+            continue;
+        }
+
+        // FontDaw (A2): a user file may name a command that is not registered (yet): it keeps its
+        // key in the file, but has no row
+        if (!fontdaw::isRegistered(shortcut.command, *commandsRegister())) {
             continue;
         }
 

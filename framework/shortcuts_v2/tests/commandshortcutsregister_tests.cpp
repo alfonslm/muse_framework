@@ -20,6 +20,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include <fstream>
+#include <map>
+#include <set>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
@@ -66,8 +68,18 @@ public:
         modularity::globalIoc()->registerExport<ICommandsRegister>("utests", m_commandsRegister);
 
         //! NOTE Every command is available for shortcuts by default
+        // FontDaw (A2): every command is registered under its own name (the shortcuts register
+        // drops unknown commands from built-in preset files); a test marks one as unknown with
+        // m_unknownCommands
         ON_CALL(*m_commandsRegister, commandInfo(_))
-        .WillByDefault(ReturnRef(m_commandInfo));
+        .WillByDefault(Invoke([this](const Command& command) -> const CommandInfo& {
+            if (m_unknownCommands.count(command)) {
+                return m_nullInfo;
+            }
+            CommandInfo& info = m_commandInfos[command];
+            info.command = command;
+            return info;
+        }));
 
         ON_CALL(*m_configuration, defaultShortcutsName())
         .WillByDefault(Return("shortcuts"));
@@ -156,6 +168,9 @@ protected:
     std::shared_ptr<NiceMock<mi::MultiWindowsProviderMock> > m_multiWindowsProvider;
     std::shared_ptr<NiceMock<CommandsRegisterMock> > m_commandsRegister;
     CommandInfo m_commandInfo;
+    std::map<Command, CommandInfo> m_commandInfos; // FontDaw (A2)
+    std::set<Command> m_unknownCommands; // FontDaw (A2)
+    CommandInfo m_nullInfo; // FontDaw (A2)
 
     std::unique_ptr<CommandShortcutsRegister> m_register;
 };
@@ -552,5 +567,44 @@ TEST_F(Shortcuts_CommandShortcutsRegisterTests, AvailablePresets_Unchanged)
 {
     initRegister();
     EXPECT_EQ(m_register->availablePresets(), std::vector<std::string> { "shortcuts_azerty" });
+}
+
+// FontDaw (shortcut work order v2, A2, step 3): unknown commands
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, BuiltInPresetDropsUnknownCommand)
+{
+    //! [GIVEN] The azerty preset rebinds test://c, which is not registered
+    m_unknownCommands.insert(Command("test://c"));
+    m_currentPresetName = "shortcuts_azerty";
+
+    //! [WHEN] The register is initialized
+    initRegister();
+
+    //! [THEN] The preset's entry is ignored: test://c keeps the base's keys (the base file is upstream's
+    //! and is not filtered)
+    const Shortcut* c = findShortcut(m_register->shortcuts(), Command("test://c"));
+    ASSERT_NE(c, nullptr);
+    EXPECT_EQ(c->sequences, seqs({ "1", "Num+1" }));
+}
+
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, UserFileKeepsUnknownCommand)
+{
+    //! [GIVEN] The user file binds a command that is not registered (an extension not loaded yet)
+    m_unknownCommands.insert(Command("test://later"));
+    writeUserFile("shortcuts", R"([ { "scope": "TEST", "shortcuts": [ { "command": "test://later", "sequences": ["L"] } ] } ])");
+
+    //! [WHEN] The register is initialized and the shortcuts are written back
+    initRegister();
+    const Shortcut* later = findShortcut(m_register->shortcuts(), Command("test://later"));
+    ASSERT_NE(later, nullptr);
+    EXPECT_EQ(later->sequences, seqs({ "L" }));
+
+    ShortcutList all = m_register->shortcuts();
+    m_register->updateShortcuts(all);
+
+    //! [THEN] The key is still in the user file
+    m_register->reload();
+    later = findShortcut(m_register->shortcuts(), Command("test://later"));
+    ASSERT_NE(later, nullptr);
+    EXPECT_EQ(later->sequences, seqs({ "L" }));
 }
 }

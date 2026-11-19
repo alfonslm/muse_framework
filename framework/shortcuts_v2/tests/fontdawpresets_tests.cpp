@@ -22,8 +22,10 @@
 // FontDaw (shortcut work order v2, A2): tests for internal/fontdawpresets.*
 
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 #include "internal/fontdawpresets.h"
+#include "rcommand/tests/mocks/commandsregistermock.h"
 
 using namespace muse;
 using namespace muse::shortcuts;
@@ -100,3 +102,35 @@ TEST(Shortcuts_FontDawPresetsTests, UserPresetIdPrefix)
     EXPECT_FALSE(fontdaw::isUserPresetId(""));
     EXPECT_FALSE(fontdaw::isUserPresetId("myuser-x"));
 }
+
+// step 3: "registered" means the register knows the command by name; an empty command never is
+TEST(Shortcuts_FontDawPresetsTests, IsRegistered)
+{
+    using ::testing::_;
+    using ::testing::Invoke;
+    using ::testing::NiceMock;
+
+    NiceMock<rcommand::CommandsRegisterMock> commands;
+    rcommand::CommandInfo known;
+    known.command = rcommand::Command("test://known");
+    static rcommand::CommandInfo null;
+    ON_CALL(commands, commandInfo(_)).WillByDefault(Invoke([&known](const rcommand::Command& c) -> const rcommand::CommandInfo& {
+        return c == known.command ? known : null;
+    }));
+
+    EXPECT_TRUE(fontdaw::isRegistered(rcommand::Command("test://known"), commands));
+    EXPECT_FALSE(fontdaw::isRegistered(rcommand::Command("test://unknown"), commands));
+    EXPECT_FALSE(fontdaw::isRegistered(rcommand::Command(), commands));
+
+    ShortcutList list;
+    Shortcut a;
+    a.command = rcommand::Command("test://known");
+    Shortcut b;
+    b.command = rcommand::Command("test://unknown");
+    Shortcut e;
+    list = { a, b, e };
+    fontdaw::dropUnregistered(list, commands);
+    ASSERT_EQ(list.size(), 1u);
+    EXPECT_EQ(list.at(0).command, rcommand::Command("test://known"));
+}
+

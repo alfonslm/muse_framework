@@ -20,6 +20,8 @@
  */
 #include "fontdawpresets.h"
 
+#include <algorithm>
+
 #include "log.h"
 
 // FontDaw (shortcut work order v2, A2): skeleton. Each body is filled in by the implementation
@@ -101,7 +103,24 @@ void fontdaw::applyRenames(ShortcutList&, const std::map<std::string, std::strin
     // TODO(FontDaw shortcuts A2, step 6)
 }
 
-void fontdaw::dropUnregistered(ShortcutList&, const rcommand::ICommandsRegister&)
+bool fontdaw::isRegistered(const rcommand::Command& command, const rcommand::ICommandsRegister& commands)
 {
-    // TODO(FontDaw shortcuts A2, step 3)
+    if (!command.isValid()) {
+        return false;
+    }
+
+    // an unknown command gets the register's null CommandInfo, whose command is empty
+    return commands.commandInfo(command).command == command;
+}
+
+void fontdaw::dropUnregistered(ShortcutList& shortcuts, const rcommand::ICommandsRegister& commands)
+{
+    auto it = std::remove_if(shortcuts.begin(), shortcuts.end(), [&commands](const Shortcut& sc) {
+        if (isRegistered(sc.command, commands)) {
+            return false;
+        }
+        LOGW() << "ignoring a shortcut for an unknown command in a built-in preset: " << sc.command;
+        return true;
+    });
+    shortcuts.erase(it, shortcuts.end());
 }

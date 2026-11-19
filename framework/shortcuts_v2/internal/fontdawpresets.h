@@ -90,4 +90,7 @@ void applyRenames(ShortcutList& shortcuts, const std::map<std::string, std::stri
 //! keep such entries (an extension may register later, and updateShortcuts() rewrites the file
 //! from memory); the list model hides them.
 void dropUnregistered(ShortcutList& shortcuts, const rcommand::ICommandsRegister& commands);
+
+//! Whether \p command is non-empty and known to the commands register (its CommandInfo names it).
+bool isRegistered(const rcommand::Command& command, const rcommand::ICommandsRegister& commands);
 }
