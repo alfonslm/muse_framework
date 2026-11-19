@@ -134,3 +134,21 @@ TEST(Shortcuts_FontDawPresetsTests, IsRegistered)
     EXPECT_EQ(list.at(0).command, rcommand::Command("test://known"));
 }
 
+TEST(Shortcuts_FontDawPresetsTests, MakeUserPresetId)
+{
+    EXPECT_EQ(fontdaw::makeUserPresetId("My keys!", {}), "user-my-keys");
+    EXPECT_EQ(fontdaw::makeUserPresetId("My keys", { "user-my-keys" }), "user-my-keys-2");
+    EXPECT_EQ(fontdaw::makeUserPresetId("My keys", { "user-my-keys", "user-my-keys-2" }), "user-my-keys-3");
+    EXPECT_EQ(fontdaw::makeUserPresetId("Åäö", {}), "user-layout");
+    // never a built-in id: always prefixed
+    EXPECT_EQ(fontdaw::makeUserPresetId("shortcuts_azerty", { "shortcuts_azerty" }), "user-shortcuts-azerty");
+}
+
+TEST(Shortcuts_FontDawPresetsTests, ValidTitle)
+{
+    EXPECT_EQ(fontdaw::validTitle("  Mine  "), "Mine");
+    EXPECT_EQ(fontdaw::validTitle("   "), "");
+    EXPECT_EQ(fontdaw::validTitle(std::string(64, 'x')), std::string(64, 'x'));
+    EXPECT_EQ(fontdaw::validTitle(std::string(65, 'x')), "");
+}
+

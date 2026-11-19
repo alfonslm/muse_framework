@@ -29,6 +29,7 @@
 #include "global/types/val.h"
 #include "rcommand/icommandsregister.h"
 
+#include "../ishortcutsconfiguration.h"
 #include "../shortcutstypes.h"
 
 //! FontDaw (shortcut work order v2, A2): FontDaw's additions to shortcuts v2's presets, kept in this
@@ -71,6 +72,23 @@ Ret writeUserPreset(const io::path_t& path, const UserPresetFile& file);
 //! A unique id for a new user preset: USER_PRESET_PREFIX + a file-safe form of the title, with a
 //! number added if taken.
 std::string makeUserPresetId(const std::string& title, const std::vector<std::string>& takenIds);
+
+//! A title as stored: trimmed; empty if it is empty or longer than USER_PRESET_TITLE_MAX.
+std::string validTitle(const std::string& title);
+
+// Helpers for the register's one-line hooks (step 5)
+std::vector<std::string> builtInIds(const IShortcutsConfiguration& config);
+io::path_t userPresetPath(const IShortcutsConfiguration& config, const std::string& id);
+//! The preset whose keys the defaults take: a user preset's parent ("" if its file or parent is
+//! unusable: the base, and the file is kept), any other name as it is.
+std::string presetToApply(const std::string& presetName, const IShortcutsConfiguration& config);
+//! The user preset's own keys (its diff on the parent), for the register's user list.
+bool readUserPresetShortcuts(ShortcutList& shortcuts, const io::path_t& path, const IShortcutsConfiguration& config);
+//! Writes \p shortcuts into an existing, valid user preset file, keeping its title and parent; an
+//! empty list is written as an empty "shortcuts" (the preset stays, back to its parent).
+Ret writeUserPresetShortcuts(const io::path_t& path, const ShortcutList& shortcuts, const IShortcutsConfiguration& config);
+//! The user presets in userPresetsDirPath() that read correctly, sorted by title.
+std::vector<PresetInfo> listUserPresets(const IShortcutsConfiguration& config);
 
 //! Complete built-in presets (architecture check of #246, M1): keep rows, scopes and auto-repeat of
 //! `defaults` (base + platform), drop all their sequences, then apply `preset`.

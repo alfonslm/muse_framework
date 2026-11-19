@@ -31,9 +31,11 @@
 #include "modularity/ioc.h"
 #include "async/asyncable.h"
 #include "global/io/file.h"
+#include "global/io/dir.h"
 #include "global/serialization/json.h"
 
 #include "internal/commandshortcutsregister.h"
+#include "internal/fontdawpresets.h"
 
 #include "mocks/shortcutsconfigurationmock.h"
 #include "multiwindows/tests/mocks/multiwindowsprovidermock.h"
@@ -107,6 +109,18 @@ public:
 
         ON_CALL(*m_multiWindowsProvider, resourceChanged())
         .WillByDefault(Return(m_resourceChanged));
+
+        // FontDaw (A2): the built-in presets with metadata, and the user presets' folder
+        ON_CALL(*m_configuration, builtInPresetInfos())
+        .WillByDefault(Invoke([]() {
+            PresetInfo azerty;
+            azerty.id = "shortcuts_azerty";
+            return std::vector<PresetInfo> { azerty };
+        }));
+        ON_CALL(*m_configuration, userPresetsDirPath())
+        .WillByDefault(Invoke([this]() {
+            return io::path_t(m_userDirPath + "/presets");
+        }));
     }
 
     void TearDown() override
@@ -723,5 +737,254 @@ TEST_F(Shortcuts_CommandShortcutsRegisterTests, CompletePreset_UserEditsOnTop)
     const Shortcut* b = findShortcut(m_register->shortcuts(), Command("test://b"));
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(b->sequences, seqs({ "X" }));
+}
+
+// FontDaw (shortcut work order v2, A2, step 5): user presets
+namespace {
+const char* MINE = R"({ "version": 1, "title": "Mine", "parent": "shortcuts_azerty",
+    "shortcuts": [ { "scope": "TEST", "shortcuts": [ { "command": "test://a", "sequences": ["Ctrl+M"] } ] } ] })";
+}
+
+class Shortcuts_FontDawUserPresetTests : public Shortcuts_CommandShortcutsRegisterTests
+{
+protected:
+    void writeUserPreset(const std::string& id, const std::string& content)
+    {
+        io::Dir::mkpath(m_userDirPath + "/presets");
+        std::ofstream file(m_userDirPath + "/presets/" + id + ".json");
+        ASSERT_TRUE(file.is_open());
+        file << content;
+    }
+
+    io::path_t presetPath(const std::string& id) const
+    {
+        return io::path_t(m_userDirPath + "/presets/" + id + ".json");
+    }
+
+    fontdaw::UserPresetFile readPreset(const std::string& id) const
+    {
+        RetVal<fontdaw::UserPresetFile> file = fontdaw::readUserPreset(presetPath(id), { "shortcuts_azerty" });
+        EXPECT_TRUE(file.ret) << id;
+        return file.val;
+    }
+
+    void followPresetChanges()
+    {
+        ON_CALL(*m_configuration, setCurrentShortcutsPresetName(_))
+        .WillByDefault(Invoke([this](const std::string& name) { changeCurrentPreset(name); }));
+    }
+};
+
+TEST_F(Shortcuts_FontDawUserPresetTests, ResolvesOnItsParent)
+{
+    writeUserPreset("user-mine", MINE);
+    m_currentPresetName = "user-mine";
+    initRegister();
+
+    const Shortcut* a = findShortcut(m_register->shortcuts(), Command("test://a"));
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->sequences, seqs({ "Ctrl+M" }));
+    const Shortcut* c = findShortcut(m_register->shortcuts(), Command("test://c"));
+    ASSERT_NE(c, nullptr);
+    EXPECT_EQ(c->sequences, seqs({ "&", "Num+1" })); // the parent's (azerty's) key
+}
+
+TEST_F(Shortcuts_FontDawUserPresetTests, SaveAs_DiffOnParent_MadeCurrent_Listed)
+{
+    followPresetChanges();
+    m_currentPresetName = "shortcuts_azerty";
+    initRegister();
+
+    ShortcutList all = m_register->shortcuts();
+    for (Shortcut& sc : all) {
+        if (sc.command == Command("test://b")) {
+            sc.sequences = { "Ctrl+Y" };
+        }
+    }
+    m_register->updateShortcuts(all);
+
+    int presetsChanged = 0;
+    m_register->presetsChanged().onNotify(this, [&presetsChanged]() { ++presetsChanged; });
+
+    RetVal<std::string> id = m_register->savePresetAs("  My keys!  ");
+    ASSERT_TRUE(id.ret);
+    EXPECT_EQ(id.val, "user-my-keys");
+    EXPECT_EQ(m_currentPresetName, "user-my-keys");
+    EXPECT_GE(presetsChanged, 1);
+
+    const fontdaw::UserPresetFile file = readPreset("user-my-keys");
+    EXPECT_EQ(file.title, "My keys!");
+    EXPECT_EQ(file.parent, "shortcuts_azerty");
+    ASSERT_EQ(file.shortcuts.size(), 1u);
+    EXPECT_EQ(file.shortcuts.at(0).command, Command("test://b"));
+
+    const Shortcut* b = findShortcut(m_register->shortcuts(), Command("test://b"));
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->sequences, seqs({ "Ctrl+Y" }));
+
+    bool listed = false;
+    for (const PresetInfo& info : m_register->presetInfos()) {
+        if (info.id == "user-my-keys") {
+            listed = true;
+            EXPECT_TRUE(info.isUser);
+            EXPECT_EQ(info.parent, "shortcuts_azerty");
+        }
+    }
+    EXPECT_TRUE(listed);
+}
+
+TEST_F(Shortcuts_FontDawUserPresetTests, SaveAs_IdNeverClashes_AndBaseIsNoParent)
+{
+    followPresetChanges();
+    writeUserPreset("user-mine", MINE);
+    m_currentPresetName = "user-mine";
+    initRegister();
+
+    // saving "Mine" again from a user preset: a new id, the same parent
+    RetVal<std::string> id = m_register->savePresetAs("Mine");
+    ASSERT_TRUE(id.ret);
+    EXPECT_EQ(id.val, "user-mine-2");
+    EXPECT_EQ(readPreset("user-mine-2").parent, "shortcuts_azerty");
+
+    // from the base there is no built-in parent: refused
+    changeCurrentPreset("");
+    EXPECT_FALSE(m_register->savePresetAs("From base").ret);
+
+    // an empty or too long title is refused
+    changeCurrentPreset("shortcuts_azerty");
+    EXPECT_FALSE(m_register->savePresetAs("   ").ret);
+    EXPECT_FALSE(m_register->savePresetAs(std::string(65, 'x')).ret);
+}
+
+TEST_F(Shortcuts_FontDawUserPresetTests, SaveAs_LeavesOutAdditionalShortcuts)
+{
+    followPresetChanges();
+    m_currentPresetName = "shortcuts_azerty";
+    initRegister();
+
+    Shortcut extra;
+    extra.scope = "TEST";
+    extra.command = Command("test://extra");
+    extra.sequences = { "E" };
+    m_register->setAdditionalShortcuts("context", { extra });
+
+    RetVal<std::string> id = m_register->savePresetAs("With extra");
+    ASSERT_TRUE(id.ret);
+    for (const Shortcut& sc : readPreset(id.val).shortcuts) {
+        EXPECT_NE(sc.command, Command("test://extra"));
+    }
+}
+
+// Re-check of #272, addition 1: editing a user preset back to its parent's keys keeps the preset
+TEST_F(Shortcuts_FontDawUserPresetTests, EmptiedPresetIsKept)
+{
+    writeUserPreset("user-mine", MINE);
+    m_currentPresetName = "user-mine";
+    initRegister();
+
+    ShortcutList all = m_register->shortcuts();
+    for (Shortcut& sc : all) {
+        if (sc.command == Command("test://a")) {
+            sc.sequences = { "Ctrl+A" }; // the parent's key
+        }
+    }
+    m_register->updateShortcuts(all);
+
+    EXPECT_TRUE(io::File::exists(presetPath("user-mine")));
+    EXPECT_TRUE(readPreset("user-mine").shortcuts.empty());
+}
+
+// Re-check of #272, addition 2: reset of a user preset = back to its parent
+TEST_F(Shortcuts_FontDawUserPresetTests, ResetGoesBackToTheParent)
+{
+    writeUserPreset("user-mine", MINE);
+    m_currentPresetName = "user-mine";
+    initRegister();
+
+    m_register->resetShortcuts();
+
+    EXPECT_TRUE(io::File::exists(presetPath("user-mine")));
+    const fontdaw::UserPresetFile file = readPreset("user-mine");
+    EXPECT_EQ(file.title, "Mine");
+    EXPECT_TRUE(file.shortcuts.empty());
+    const Shortcut* a = findShortcut(m_register->shortcuts(), Command("test://a"));
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->sequences, seqs({ "Ctrl+A" }));
+}
+
+// Re-check of #272, addition 3: import into a user preset replaces only its keys
+TEST_F(Shortcuts_FontDawUserPresetTests, ImportKeepsTitleAndParent)
+{
+    writeUserPreset("user-mine", MINE);
+    m_currentPresetName = "user-mine";
+    initRegister();
+
+    ASSERT_TRUE(m_register->importFromFile(io::path_t(std::string(SHORTCUTS_TESTDATA_DIR) + "/shortcuts_mac.json")));
+
+    const fontdaw::UserPresetFile file = readPreset("user-mine");
+    EXPECT_EQ(file.title, "Mine");
+    EXPECT_EQ(file.parent, "shortcuts_azerty");
+    ASSERT_EQ(file.shortcuts.size(), 1u);
+    EXPECT_EQ(file.shortcuts.at(0).command, Command("test://b"));
+}
+
+TEST_F(Shortcuts_FontDawUserPresetTests, DeleteFallsBackToTheParent)
+{
+    writeUserPreset("user-mine", MINE);
+    m_currentPresetName = "user-mine";
+    initRegister();
+
+    EXPECT_TRUE(m_register->canDeletePreset("user-mine"));
+    int presetsChanged = 0;
+    m_register->presetsChanged().onNotify(this, [&presetsChanged]() { ++presetsChanged; });
+
+    EXPECT_CALL(*m_configuration, setCurrentShortcutsPresetName(std::string("shortcuts_azerty")));
+    m_register->deletePreset("user-mine");
+
+    EXPECT_FALSE(io::File::exists(presetPath("user-mine")));
+    EXPECT_EQ(presetsChanged, 1);
+}
+
+// An unusable file falls back to the base and is kept, never overwritten
+TEST_F(Shortcuts_FontDawUserPresetTests, UnusableFilesFallBackToTheBase)
+{
+    const std::vector<std::pair<std::string, std::string> > bad = {
+        { "user-newer", R"({ "version": 2, "title": "Newer", "parent": "shortcuts_azerty", "shortcuts": [] })" },
+        { "user-noparent", R"({ "version": 1, "title": "No parent", "parent": "shortcuts_gone", "shortcuts": [] })" },
+        { "user-notitle", R"({ "version": 1, "title": "  ", "parent": "shortcuts_azerty", "shortcuts": [] })" },
+        { "user-notjson", "not json" },
+    };
+
+    for (const auto& [id, content] : bad) {
+        writeUserPreset(id, content);
+        m_currentPresetName = id;
+        initRegister();
+
+        const Shortcut* c = findShortcut(m_register->shortcuts(), Command("test://c"));
+        ASSERT_NE(c, nullptr) << id;
+        EXPECT_EQ(c->sequences, seqs({ "1", "Num+1" })) << id; // the base's key, not azerty's
+
+        ShortcutList all = m_register->shortcuts();
+        m_register->updateShortcuts(all);
+
+        ByteArray data;
+        ASSERT_TRUE(io::File::readFile(presetPath(id), data)) << id;
+        EXPECT_EQ(std::string(data.constChar(), data.size()), content) << id; // unchanged
+
+        for (const PresetInfo& info : m_register->presetInfos()) {
+            EXPECT_NE(info.id, id) << "an unusable preset is not listed";
+        }
+    }
+}
+
+// Re-check of #272: another window changing the shortcuts files refreshes every drop-down
+TEST_F(Shortcuts_FontDawUserPresetTests, PresetsChangedOnResourceChanged)
+{
+    initRegister();
+    int presetsChanged = 0;
+    m_register->presetsChanged().onNotify(this, [&presetsChanged]() { ++presetsChanged; });
+
+    m_resourceChanged.send("CommandShortcuts");
+    EXPECT_EQ(presetsChanged, 1);
 }
 }
