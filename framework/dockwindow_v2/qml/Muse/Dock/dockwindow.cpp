@@ -42,6 +42,7 @@
 #include "dockingholderview.h"
 #include "dockwindow.h"
 #include "topleveltoolbarslayout.h"
+#include "internal/windowgeometrycheck.h"
 
 #include "muse_framework_config.h"
 
@@ -529,18 +530,37 @@ void DockWindow::saveWindowGeometry()
     /// NOTE: The state of all dock widgets is also saved here,
     /// since the library does not provide the ability to save
     /// and restore only the application geometry.
-    uiState()->setWindowGeometry(windowState());
+    const QByteArray state = windowState();
+
+    //! NOTE: A window that is being taken down can have no size; saving it would leave the next
+    //! start without a usable window, so the last good geometry is kept instead
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(state, WindowGeometryCheck::availableScreenGeometries());
+    if (!check.usable) {
+        LOGW() << "Not saving the window geometry: " << check.reason;
+        return;
+    }
+
+    uiState()->setWindowGeometry(state);
 }
 
 void DockWindow::restoreGeometry()
 {
     TRACEFUNC;
 
-    if (uiState()->windowGeometry().isEmpty()) {
+    const QByteArray geometry = uiState()->windowGeometry();
+    if (geometry.isEmpty()) {
         return;
     }
 
-    if (restoreLayout(uiState()->windowGeometry())) {
+    //! NOTE: A saved main window that is empty, tiny or off every screen (e.g. saved by a window
+    //! that was being taken down, or on a screen that is gone) is not restored: the default is used
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(geometry, WindowGeometryCheck::availableScreenGeometries());
+    if (!check.usable) {
+        LOGW() << "Not restoring the saved window geometry, using the default: " << check.reason;
+        return;
+    }
+
+    if (restoreLayout(geometry)) {
         m_hasGeometryBeenRestored = true;
     } else {
         LOGE() << "Could not restore the window geometry!";
@@ -551,8 +571,17 @@ void DockWindow::savePageState(const QString& pageName)
 {
     TRACEFUNC;
 
+    const QByteArray state = windowState();
+
+    //! NOTE: Page layouts are restored relative to the main window, so only the size is checked
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(state, {});
+    if (!check.usable) {
+        LOGW() << "Not saving the state of " << pageName << ": " << check.reason;
+        return;
+    }
+
     m_reloadCurrentPageAllowed = false;
-    uiState()->setPageState(pageName, windowState());
+    uiState()->setPageState(pageName, state);
     m_reloadCurrentPageAllowed = true;
 }
 
@@ -563,6 +592,15 @@ void DockWindow::restorePageState(const DockPageView* page)
     const QString& pageName = page->objectName();
 
     ValNt<QByteArray> pageStateValNt = uiState()->pageState(pageName);
+
+    //! NOTE: A page layout saved from a main window with no usable size is not restored: the page's
+    //! default layout is used
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(pageStateValNt.val, {});
+    if (!check.usable) {
+        LOGW() << "Not restoring the state of " << pageName << ", using the default: " << check.reason;
+        pageStateValNt.val.clear();
+    }
+
     const bool layoutIsEmpty = pageStateValNt.val.isEmpty();
 
     QSet<DockBase*> unknownDocks;
