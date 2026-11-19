@@ -44,5 +44,10 @@ public:
 
     io::path_t commandShortcutsUserAppDataPath(const std::string& shortcutsName) const override;
     io::path_t commandShortcutsAppDataPath(const std::string& shortcutsName) const override;
+
+    std::vector<PresetInfo> builtInPresetInfos() const override { return {}; }
+    bool isBaseHidden() const override { return false; }
+    io::path_t userPresetsDirPath() const override { return io::path_t(); }
+    std::map<std::string, std::string> commandRenames() const override { return {}; }
 };
 }

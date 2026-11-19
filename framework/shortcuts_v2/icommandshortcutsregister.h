@@ -30,6 +30,7 @@
 #include "async/channel.h"
 #include "async/notification.h"
 #include "types/ret.h"
+#include "types/retval.h"
 #include "io/path.h"
 
 namespace muse::shortcuts {
@@ -62,6 +63,16 @@ public:
     virtual bool isPresetEdited(const std::string& presetName) const = 0;
     virtual bool canDeletePreset(const std::string& presetName) const = 0;
     virtual void deletePreset(const std::string& presetName) = 0;
+
+    // FontDaw (shortcut work order v2, A2)
+    //! availablePresets() with metadata: the base (unless hidden by the cfg), the built-in presets in
+    //! shortcuts.cfg order, then the user presets by title. availablePresets() is unchanged.
+    virtual std::vector<PresetInfo> presetInfos() const = 0;
+    //! "Save as…": the current merged list as a new user preset (one file, a diff on the current
+    //! built-in preset, or on the current user preset's parent), made current. Returns its id.
+    virtual RetVal<std::string> savePresetAs(const std::string& title) = 0;
+    //! A preset was added or deleted: every window's drop-down refreshes.
+    virtual async::Notification presetsChanged() const = 0;
 
     // for testflow tests
     virtual void reload(bool onlyDef = false) = 0;

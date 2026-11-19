@@ -20,6 +20,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "commandshortcutsregister.h"
+#include "fontdawpresets.h" // FontDaw (A2)
 
 #include "global/containers.h"
 #include "global/stringutils.h"
@@ -90,6 +91,10 @@ void CommandShortcutsRegister::reload(bool onlyDef)
 
         std::string presetName = configuration()->currentShortcutsPresetName();
         if (!presetName.empty()) {
+            // TODO(FontDaw shortcuts A2, steps 4b and 5): one hook. A complete built-in preset goes
+            // through fontdaw::applyCompletePreset() instead of the diff. A user preset applies its
+            // parent here, and its own file is then read as the user file below. A missing or
+            // unreadable user preset or parent falls back to the base and keeps the file.
             applyShortcutsDiff(presetName, m_defaultShortcuts);
         }
     }
@@ -177,11 +182,18 @@ std::string CommandShortcutsRegister::activeShortcutsName() const
 
 io::path_t CommandShortcutsRegister::userShortcutsPath() const
 {
+    // TODO(FontDaw shortcuts A2, step 5): one hook. A user preset's id (fontdaw::isUserPresetId())
+    // maps to userPresetsDirPath()/<id>.json, read and written with fontdaw::readUserPreset() /
+    // writeUserPreset(), so its edits go into its own file (one file per user preset). Renames
+    // (step 6) are applied in memory to whatever user list is read.
     return configuration()->commandShortcutsUserAppDataPath(activeShortcutsName());
 }
 
 void CommandShortcutsRegister::applyShortcutsDiff(const std::string& shortcutsName, ShortcutList& shortcuts) const
 {
+    // TODO(FontDaw shortcuts A2, steps 3 and 4a): two hooks. After reading the diff,
+    // fontdaw::dropUnregistered() (built-in files only); after mergeShortcuts() below,
+    // fontdaw::restorePresetScopes() with the scopes the diff file named.
     ShortcutList diff;
     if (!readFromFile(diff, configuration()->commandShortcutsAppDataPath(shortcutsName))) {
         return;
@@ -609,6 +621,10 @@ bool CommandShortcutsRegister::isPresetEdited(const std::string& presetName) con
 
 bool CommandShortcutsRegister::canDeletePreset(const std::string& presetName) const
 {
+    // TODO(FontDaw shortcuts A2, step 5): upstream's rule below stays as it is (its test
+    // DeletePresetRemovesUserFileAndFallsBackToDefault keeps passing); a user preset id is added to
+    // it. deletePreset() then removes that file, switches to its parent if it was current, and
+    // notifies presetsChanged().
     if (presetName.empty()) {
         return false;
     }
@@ -642,4 +658,27 @@ void CommandShortcutsRegister::deletePreset(const std::string& presetName)
     if (currentPresetName() == presetName) {
         setCurrentPresetName(std::string());
     }
+}
+
+// FontDaw (shortcut work order v2, A2): skeleton, filled in by the implementation steps.
+std::vector<PresetInfo> CommandShortcutsRegister::presetInfos() const
+{
+    // TODO(FontDaw shortcuts A2, step 2): the base (unless isBaseHidden()), builtInPresetInfos(),
+    // then the user presets read from userPresetsDirPath() (title, parent) sorted by title.
+    return configuration()->builtInPresetInfos();
+}
+
+RetVal<std::string> CommandShortcutsRegister::savePresetAs(const std::string& title)
+{
+    // TODO(FontDaw shortcuts A2, step 5): fontdaw::makeUserPresetId(); the parent is the current
+    // built-in preset (or the current user preset's parent); the list written is
+    // filterAndUpdateAdditionalShortcuts(m_shortcuts) diffed against the parent's resolved list, as
+    // updateShortcuts() does; make it current; m_presetsChanged.notify().
+    UNUSED(title);
+    return RetVal<std::string>();
+}
+
+async::Notification CommandShortcutsRegister::presetsChanged() const
+{
+    return m_presetsChanged;
 }

@@ -28,6 +28,8 @@
 
 #include "log.h"
 
+#include "fontdawpresets.h" // FontDaw (A2)
+
 using namespace muse;
 using namespace muse::shortcuts;
 
@@ -126,4 +128,26 @@ io::path_t ShortcutsConfiguration::commandShortcutsUserAppDataPath(const std::st
 io::path_t ShortcutsConfiguration::commandShortcutsAppDataPath(const std::string& shortcutsName) const
 {
     return m_config.value("command_" + shortcutsName).toPath();
+}
+
+// FontDaw (shortcut work order v2, A2)
+std::vector<PresetInfo> ShortcutsConfiguration::builtInPresetInfos() const
+{
+    return fontdaw::parseBuiltInPresets(m_config.value("command_shortcuts_presets").toList());
+}
+
+bool ShortcutsConfiguration::isBaseHidden() const
+{
+    return m_config.value("command_shortcuts_hide_base").toBool();
+}
+
+io::path_t ShortcutsConfiguration::userPresetsDirPath() const
+{
+    return userShortcutsDirPath() + "/presets";
+}
+
+std::map<std::string, std::string> ShortcutsConfiguration::commandRenames() const
+{
+    // TODO(FontDaw shortcuts A2, step 6): read the "command_renames" object (old URI -> new URI).
+    return {};
 }

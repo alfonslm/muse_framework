@@ -52,6 +52,10 @@ public:
     bool canDeletePreset(const std::string& presetName) const override;
     void deletePreset(const std::string& presetName) override;
 
+    std::vector<PresetInfo> presetInfos() const override { return {}; }
+    RetVal<std::string> savePresetAs(const std::string&) override { return RetVal<std::string>(); }
+    async::Notification presetsChanged() const override { return async::Notification(); }
+
     // for testflow tests
     void reload(bool onlyDef = false) override;
 };

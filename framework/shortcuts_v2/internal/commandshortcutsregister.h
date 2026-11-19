@@ -70,6 +70,10 @@ public:
     bool canDeletePreset(const std::string& presetName) const override;
     void deletePreset(const std::string& presetName) override;
 
+    std::vector<PresetInfo> presetInfos() const override; // FontDaw (A2)
+    RetVal<std::string> savePresetAs(const std::string& title) override; // FontDaw (A2)
+    async::Notification presetsChanged() const override; // FontDaw (A2)
+
     // for testflow tests
     void reload(bool onlyDef = false) override;
 
@@ -100,5 +104,6 @@ private:
     ShortcutList m_defaultShortcuts;
     std::unordered_map<std::string, ShortcutList> m_additionalShortcutsMap;
     async::Notification m_shortcutsChanged;
+    async::Notification m_presetsChanged; // FontDaw (A2)
 };
 }
