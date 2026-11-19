@@ -93,9 +93,18 @@ void fontdaw::applyCompletePreset(ShortcutList&, const ShortcutList&)
     // TODO(FontDaw shortcuts A2, step 4b)
 }
 
-void fontdaw::restorePresetScopes(ShortcutList&, const std::map<rcommand::Command, std::string>&)
+void fontdaw::movePresetScopes(ShortcutList& base, const ShortcutList& preset)
 {
-    // TODO(FontDaw shortcuts A2, step 4a)
+    for (const Shortcut& entry : preset) {
+        if (entry.scope.empty()) {
+            continue;
+        }
+        for (Shortcut& sc : base) {
+            if (sc.command == entry.command) {
+                sc.scope = entry.scope;
+            }
+        }
+    }
 }
 
 void fontdaw::applyRenames(ShortcutList&, const std::map<std::string, std::string>&)

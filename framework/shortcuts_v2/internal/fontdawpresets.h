@@ -76,9 +76,11 @@ std::string makeUserPresetId(const std::string& title, const std::vector<std::st
 //! `defaults` (base + platform), drop all their sequences, then apply `preset`.
 void applyCompletePreset(ShortcutList& defaults, const ShortcutList& preset);
 
-//! "A preset's scope wins" (choice 4): after upstream's mergeShortcuts(), give back the scope a
-//! built-in preset entry named. `presetScopes`: command -> scope as written in the preset file.
-void restorePresetScopes(ShortcutList& merged, const std::map<rcommand::Command, std::string>& presetScopes);
+//! "A preset's scope wins" (choice 4): before upstream's mergeShortcuts() applies a built-in preset,
+//! move each base command the preset lists under another (non-empty) scope into that scope. The
+//! merge then keeps it there, and its same-scope clash rule works on the new scope, whatever the
+//! order of entries in either file.
+void movePresetScopes(ShortcutList& base, const ShortcutList& preset);
 
 //! Renames (change: in memory, on read): old command URI -> new, from the app's cfg
 //! ("command_renames"). Applied to every user list as it is read; files are rewritten only by a

@@ -1,0 +1,20 @@
+[
+    {
+        "scope": "TEST",
+        "shortcuts": [
+            {
+                "command": "test://b",
+                "sequences": ["Ctrl+B"]
+            }
+        ]
+    },
+    {
+        "scope": "OTHER",
+        "shortcuts": [
+            {
+                "command": "test://a",
+                "sequences": ["D"]
+            }
+        ]
+    }
+]

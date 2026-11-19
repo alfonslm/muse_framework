@@ -191,13 +191,12 @@ io::path_t CommandShortcutsRegister::userShortcutsPath() const
 
 void CommandShortcutsRegister::applyShortcutsDiff(const std::string& shortcutsName, ShortcutList& shortcuts) const
 {
-    // TODO(FontDaw shortcuts A2, step 4a): after mergeShortcuts() below,
-    // fontdaw::restorePresetScopes() with the scopes the diff file named.
     ShortcutList diff;
     if (!readFromFile(diff, configuration()->commandShortcutsAppDataPath(shortcutsName))) {
         return;
     }
     fontdaw::dropUnregistered(diff, *commandsRegister()); // FontDaw (A2): a built-in preset file
+    fontdaw::movePresetScopes(shortcuts, diff); // FontDaw (A2): the preset's scope wins
 
     mergeShortcuts(diff, shortcuts);
     shortcuts = diff;

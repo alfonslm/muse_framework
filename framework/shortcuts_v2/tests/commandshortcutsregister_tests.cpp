@@ -607,4 +607,54 @@ TEST_F(Shortcuts_CommandShortcutsRegisterTests, UserFileKeepsUnknownCommand)
     ASSERT_NE(later, nullptr);
     EXPECT_EQ(later->sequences, seqs({ "L" }));
 }
+
+// FontDaw (shortcut work order v2, A2, step 4a): a built-in preset's scope wins
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, PresetScopeWins_AndClashesInTheNewScope)
+{
+    for (const char* preset : { "fontdaw_scopemove", "fontdaw_scopemove_reversed" }) {
+        //! [GIVEN] A preset moves test://a from TEST to OTHER and gives it D, which test://d has in OTHER
+        m_currentPresetName = preset;
+
+        //! [WHEN] The register is initialized
+        initRegister();
+
+        //! [THEN] test://a is in OTHER with D, and test://d no longer has D, whatever the order of entries
+        const Shortcut* a = findShortcut(m_register->shortcuts(), Command("test://a"));
+        ASSERT_NE(a, nullptr) << preset;
+        EXPECT_EQ(a->scope, "OTHER") << preset;
+        EXPECT_EQ(a->sequences, seqs({ "D" })) << preset;
+
+        const Shortcut* d = findShortcut(m_register->shortcuts(), Command("test://d"));
+        ASSERT_NE(d, nullptr) << preset;
+        EXPECT_TRUE(d->sequences.empty()) << preset;
+    }
+}
+
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, PresetEntryWithoutScopeInherits)
+{
+    //! [GIVEN] A preset entry without a scope
+    m_currentPresetName = "fontdaw_noscope";
+
+    //! [WHEN] The register is initialized
+    initRegister();
+
+    //! [THEN] The command keeps the base's scope and gets the preset's keys
+    const Shortcut* a = findShortcut(m_register->shortcuts(), Command("test://a"));
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->scope, "TEST");
+    EXPECT_EQ(a->sequences, seqs({ "Ctrl+Shift+A" }));
+}
+
+// A user file keeps "scope from the defaults", which are then the preset's
+TEST_F(Shortcuts_CommandShortcutsRegisterTests, UserEditKeepsThePresetScope)
+{
+    m_currentPresetName = "fontdaw_scopemove";
+    writeUserFile("fontdaw_scopemove", R"([ { "scope": "TEST", "shortcuts": [ { "command": "test://a", "sequences": ["Ctrl+Alt+A"] } ] } ])");
+    initRegister();
+
+    const Shortcut* a = findShortcut(m_register->shortcuts(), Command("test://a"));
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->scope, "OTHER");
+    EXPECT_EQ(a->sequences, seqs({ "Ctrl+Alt+A" }));
+}
 }

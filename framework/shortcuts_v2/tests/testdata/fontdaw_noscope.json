@@ -1,0 +1,11 @@
+[
+    {
+        "scope": "",
+        "shortcuts": [
+            {
+                "command": "test://a",
+                "sequences": ["Ctrl+Shift+A"]
+            }
+        ]
+    }
+]
