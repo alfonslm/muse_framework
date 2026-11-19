@@ -23,6 +23,7 @@
 #include "vstplugininstance.h"
 
 #include <cassert>
+#include <chrono>
 
 #include "modularity/ioc.h"
 #include "vstpluginprovider.h"
@@ -416,6 +417,22 @@ void VstPluginInstance::rescanParams()
         return;
     }
 
+    //! NOTE Traced: a plugin may rebuild internal data while its state is read or written on the
+    //! main thread, at the same time as process() runs on the audio thread (FD-160)
+    const bool traced = trace::isEnabled();
+    const auto traceStart = std::chrono::steady_clock::now();
+    if (traced) {
+        trace::log("%s: reading its state on the main thread (the plugin reported a change)", m_resourceId.c_str());
+    }
+    DEFER {
+        if (traced) {
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - traceStart).count();
+            trace::log("%s: state read done in %.1f ms (component %lld bytes, controller %lld bytes)", m_resourceId.c_str(), ms,
+                       static_cast<long long>(m_componentStateBuffer.getSize()),
+                       static_cast<long long>(m_controllerStateBuffer.getSize()));
+        }
+    };
+
     m_componentStateBuffer.seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
     m_componentStateBuffer.setSize(0);
 
@@ -478,6 +495,20 @@ void VstPluginInstance::setPluginConfig(const audio::AudioUnitConfig& config)
     m_componentHandlerPtr->setSuppressNotify(true);
     DEFER {
         m_componentHandlerPtr->setSuppressNotify(false);
+    };
+
+    const bool traced = trace::isEnabled();
+    const auto traceStart = std::chrono::steady_clock::now();
+    if (traced) {
+        trace::log("%s: writing its saved state on the main thread (component %lld bytes, controller %lld bytes)", m_resourceId.c_str(),
+                   componentState != config.end() ? static_cast<long long>(componentState->second.size()) : 0LL,
+                   controllerState != config.end() ? static_cast<long long>(controllerState->second.size()) : 0LL);
+    }
+    DEFER {
+        if (traced) {
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - traceStart).count();
+            trace::log("%s: state write done in %.1f ms", m_resourceId.c_str(), ms);
+        }
     };
 
     try {
