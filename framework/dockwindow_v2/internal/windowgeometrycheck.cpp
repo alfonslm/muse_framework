@@ -122,7 +122,7 @@ QByteArray WindowGeometryCheck::repairNormalGeometry(const QByteArray& layout, Q
     return QJsonDocument(root).toJson(QJsonDocument::Compact);
 }
 
-WindowGeometryCheck::Result WindowGeometryCheck::check(const QByteArray& layout, const QList<QRect>& screens)
+WindowGeometryCheck::Result WindowGeometryCheck::check(const QByteArray& layout, const QList<QRect>& screens, Kind kind)
 {
     if (layout.isEmpty()) {
         return {};
@@ -147,7 +147,7 @@ WindowGeometryCheck::Result WindowGeometryCheck::check(const QByteArray& layout,
         }
 
         //! The restore applies this one first; see repairNormalGeometry()
-        if (isMaximizedOrFullScreen(mainWindow)) {
+        if (kind == Kind::MainWindow && isMaximizedOrFullScreen(mainWindow)) {
             const QRect normalGeometry = rectFromJson(mainWindow.value("normalGeometry"));
             if (isTooSmall(normalGeometry)) {
                 return { false, QString("normal geometry of the maximized or full-screen main window too small: %1")

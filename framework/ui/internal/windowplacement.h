@@ -78,9 +78,10 @@ public:
     //! The safe placement on a screen with this available geometry
     static QRect safeGeometry(const QRect& available, const QSize& minimumSize = QSize());
 
-    //! Applies place() to the window, shown or not yet shown, and logs one line when it is changed.
-    //! Returns whether it was changed.
-    static bool ensureOnScreen(QWindow* window);
+    //! Applies place() to the window and logs one line when it is changed. Returns whether it was
+    //! changed. With \p onlyIfUnusable (before the window is shown) a window that would only be
+    //! clamped is left to the platform's own placement, which happens when it is shown.
+    static bool ensureOnScreen(QWindow* window, bool onlyIfUnusable = false);
 
     //! Checks the window again after each change of its geometry: every change during
     //! STARTUP_WATCH_MS from now, afterwards only a size below its minimum

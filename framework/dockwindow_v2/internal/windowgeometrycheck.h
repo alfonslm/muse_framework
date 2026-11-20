@@ -47,10 +47,17 @@ public:
         QString reason; // why not, for the log
     };
 
+    enum class Kind {
+        MainWindow, // the main window's layout: its geometry is restored
+        PageLayout  // a page's layout, restored relative to the main window: its geometry is not
+    };
+
     //! `screens`: the available geometry of each screen. When empty, the position is not checked
     //! (a page layout is restored relative to the main window, so only its size matters).
     //! A layout that can't be read, or that has no main window, is left to the library to judge.
-    static Result check(const QByteArray& layout, const QList<QRect>& screens);
+    //! For Kind::MainWindow the normal geometry of a maximized or full-screen window is checked too,
+    //! since the restore applies it; a page layout's restore skips the main window's geometry.
+    static Result check(const QByteArray& layout, const QList<QRect>& screens, Kind kind = Kind::MainWindow);
 
     //! A maximized or full-screen main window is restored by first applying its saved normal
     //! geometry, then the state. When the window was never in the normal state during the run

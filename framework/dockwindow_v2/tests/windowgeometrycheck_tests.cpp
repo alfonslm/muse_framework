@@ -218,3 +218,13 @@ TEST(Dock_WindowGeometryCheckTests, RestoreOfFullScreen_ComesBackAsNormalWindow)
         layoutWithStateAndNormalGeometry(4, screen, normal), &note);
     EXPECT_EQ(mainWindowOf(saved)["windowState"].toInt(), 4);
 }
+
+TEST(Dock_WindowGeometryCheckTests, PageLayoutOfMaximizedWindowWithEmptyNormalGeometry_IsUsable)
+{
+    //! A page layout is restored relative to the main window, so its normal geometry is not applied
+    for (int state : { 2, 4 }) {
+        const QByteArray layout = layoutWithStateAndNormalGeometry(state, QRect(0, 0, 1920, 1080), QRect());
+        EXPECT_TRUE(WindowGeometryCheck::check(layout, {}, WindowGeometryCheck::Kind::PageLayout).usable);
+        EXPECT_FALSE(WindowGeometryCheck::check(layout, ONE_SCREEN, WindowGeometryCheck::Kind::MainWindow).usable);
+    }
+}

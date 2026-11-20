@@ -136,7 +136,7 @@ WindowPlacement::Result WindowPlacement::place(const QRect& frameGeometry, const
     return result;
 }
 
-bool WindowPlacement::ensureOnScreen(QWindow* window)
+bool WindowPlacement::ensureOnScreen(QWindow* window, bool onlyIfUnusable)
 {
     if (!window) {
         return false;
@@ -169,6 +169,10 @@ bool WindowPlacement::ensureOnScreen(QWindow* window)
 
     const Result result = place(frame, screens, primaryIndex, minimumFrameSize);
     if (result.action == Action::None) {
+        return false;
+    }
+
+    if (onlyIfUnusable && result.action != Action::SafePlacement) {
         return false;
     }
 

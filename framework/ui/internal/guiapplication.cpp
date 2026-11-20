@@ -207,8 +207,9 @@ bool GuiApplication::loadMainWindow(const muse::modularity::ContextPtr& ctxId)
 
     //! FontDaw: whatever placed or sized the window (a saved layout, the platform, a display that
     //! is gone), keep it at a usable size on a screen the user can see: before it is shown, after,
-    //! and while start-up settles
-    WindowPlacement::ensureOnScreen(window);
+    //! and while start-up settles. Before it is shown only an unusable window is placed; a usable
+    //! one, e.g. the default size at a first start, is left to the platform's placement
+    WindowPlacement::ensureOnScreen(window, true /*onlyIfUnusable*/);
     window->setVisible(true);
     WindowPlacement::ensureOnScreen(window);
     WindowPlacement::watch(window);

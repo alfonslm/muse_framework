@@ -593,7 +593,7 @@ void DockWindow::savePageState(const QString& pageName)
     }
 
     //! NOTE: Page layouts are restored relative to the main window, so only the size is checked
-    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(state, {});
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(state, {}, WindowGeometryCheck::Kind::PageLayout);
     if (!check.usable) {
         LOGW() << "Not saving the state of " << pageName << ": " << check.reason;
         return;
@@ -614,7 +614,7 @@ void DockWindow::restorePageState(const DockPageView* page)
 
     //! NOTE: A page layout saved from a main window with no usable size is not restored: the page's
     //! default layout is used
-    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(pageStateValNt.val, {});
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(pageStateValNt.val, {}, WindowGeometryCheck::Kind::PageLayout);
     if (!check.usable) {
         LOGW() << "Not restoring the state of " << pageName << ", using the default: " << check.reason;
         pageStateValNt.val.clear();
