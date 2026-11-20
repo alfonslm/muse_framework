@@ -153,5 +153,5 @@ TEST(Audio_SignalNodeTests, SmallFallIsSkippedLargeFallIsReported)
     EXPECT_NEAR(node.pressure(0), -6.0206f, 1e-3f);
 
     node.feed(square(0.5f * std::pow(10.f, -6.f / 20.f))); // -6 dB
-    EXPECT_NEAR(node.pressure(0), -12.0412f, 1e-3f);
+    EXPECT_NEAR(node.pressure(0), -6.0206f - 6.f, 1e-3f);
 }
