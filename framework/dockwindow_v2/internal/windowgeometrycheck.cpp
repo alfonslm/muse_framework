@@ -40,6 +40,74 @@ QString rectToString(const QRect& rect)
 {
     return QString("%1,%2 %3x%4").arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height());
 }
+
+QJsonObject rectToJson(const QRect& rect)
+{
+    QJsonObject obj;
+    obj["x"] = rect.x();
+    obj["y"] = rect.y();
+    obj["width"] = rect.width();
+    obj["height"] = rect.height();
+    return obj;
+}
+
+//! KDDockWidgets::WindowState: Maximized = 2, FullScreen = 4. The restore applies the normal
+//! geometry of a window in one of these states, not its geometry.
+bool isMaximizedOrFullScreen(const QJsonObject& window)
+{
+    return window.value("windowState").toInt() & (2 | 4);
+}
+
+bool isTooSmall(const QRect& rect)
+{
+    return rect.width() < WindowGeometryCheck::MIN_WIDTH || rect.height() < WindowGeometryCheck::MIN_HEIGHT;
+}
+}
+
+QByteArray WindowGeometryCheck::repairNormalGeometry(const QByteArray& layout, QString* note)
+{
+    if (layout.isEmpty()) {
+        return layout;
+    }
+
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(layout, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return layout;
+    }
+
+    QJsonObject root = doc.object();
+    QJsonArray mainWindows = root.value("mainWindows").toArray();
+    bool repaired = false;
+
+    for (qsizetype i = 0; i < mainWindows.size(); ++i) {
+        QJsonObject mainWindow = mainWindows.at(i).toObject();
+        if (!isMaximizedOrFullScreen(mainWindow) || !mainWindow.contains("geometry")) {
+            continue;
+        }
+
+        const QRect normalGeometry = rectFromJson(mainWindow.value("normalGeometry"));
+        const QRect geometry = rectFromJson(mainWindow.value("geometry"));
+        if (!isTooSmall(normalGeometry) || isTooSmall(geometry)) {
+            continue;
+        }
+
+        mainWindow["normalGeometry"] = rectToJson(geometry);
+        mainWindows[i] = mainWindow;
+        repaired = true;
+
+        if (note) {
+            *note = QString("normal geometry of the maximized or full-screen main window was %1, using %2")
+                    .arg(rectToString(normalGeometry), rectToString(geometry));
+        }
+    }
+
+    if (!repaired) {
+        return layout;
+    }
+
+    root["mainWindows"] = mainWindows;
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
 }
 
 WindowGeometryCheck::Result WindowGeometryCheck::check(const QByteArray& layout, const QList<QRect>& screens)
@@ -62,8 +130,17 @@ WindowGeometryCheck::Result WindowGeometryCheck::check(const QByteArray& layout,
         }
 
         const QRect geometry = rectFromJson(mainWindow.value("geometry"));
-        if (geometry.width() < MIN_WIDTH || geometry.height() < MIN_HEIGHT) {
+        if (isTooSmall(geometry)) {
             return { false, QString("main window too small: %1").arg(rectToString(geometry)) };
+        }
+
+        //! The restore applies this one first; see repairNormalGeometry()
+        if (isMaximizedOrFullScreen(mainWindow)) {
+            const QRect normalGeometry = rectFromJson(mainWindow.value("normalGeometry"));
+            if (isTooSmall(normalGeometry)) {
+                return { false, QString("normal geometry of the maximized or full-screen main window too small: %1")
+                         .arg(rectToString(normalGeometry)) };
+            }
         }
 
         if (screens.isEmpty()) {

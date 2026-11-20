@@ -52,6 +52,13 @@ public:
     //! A layout that can't be read, or that has no main window, is left to the library to judge.
     static Result check(const QByteArray& layout, const QList<QRect>& screens);
 
+    //! A maximized or full-screen main window is restored by first applying its saved normal
+    //! geometry, then the state. When the window was never in the normal state during the run
+    //! (e.g. on macOS, zoomed or full screen from the start), that normal geometry is saved as
+    //! empty, and the restore gives a window of size zero. Such a normal geometry is replaced by
+    //! the window's geometry. Returns the layout unchanged when there is nothing to repair.
+    static QByteArray repairNormalGeometry(const QByteArray& layout, QString* note = nullptr);
+
     //! The available geometry of each screen of the application
     static QList<QRect> availableScreenGeometries();
 };

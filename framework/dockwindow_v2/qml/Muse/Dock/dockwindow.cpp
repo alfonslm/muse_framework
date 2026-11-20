@@ -530,10 +530,15 @@ void DockWindow::saveWindowGeometry()
     /// NOTE: The state of all dock widgets is also saved here,
     /// since the library does not provide the ability to save
     /// and restore only the application geometry.
-    const QByteArray state = windowState();
+    QString repairNote;
+    const QByteArray state = WindowGeometryCheck::repairNormalGeometry(windowState(), &repairNote);
     if (state.isEmpty()) {
         LOGW() << "Not saving the window geometry: the layout could not be serialized";
         return;
+    }
+
+    if (!repairNote.isEmpty()) {
+        LOGW() << "Saving the window geometry with a repaired " << repairNote;
     }
 
     //! NOTE: A window that is being taken down can have no size; saving it would leave the next
@@ -551,9 +556,14 @@ void DockWindow::restoreGeometry()
 {
     TRACEFUNC;
 
-    const QByteArray geometry = uiState()->windowGeometry();
+    QString repairNote;
+    const QByteArray geometry = WindowGeometryCheck::repairNormalGeometry(uiState()->windowGeometry(), &repairNote);
     if (geometry.isEmpty()) {
         return;
+    }
+
+    if (!repairNote.isEmpty()) {
+        LOGW() << "Restoring the window geometry with a repaired " << repairNote;
     }
 
     //! NOTE: A saved main window that is empty, tiny or off every screen (e.g. saved by a window
