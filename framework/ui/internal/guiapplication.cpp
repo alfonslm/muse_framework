@@ -204,14 +204,14 @@ bool GuiApplication::loadMainWindow(const muse::modularity::ContextPtr& ctxId)
     // The main window must be shown at this point so KDDockWidgets can read its size correctly
     // and scale all sizes properly. https://github.com/musescore/MuseScore/issues/21148
     QQuickWindow* window = dynamic_cast<QQuickWindow*>(obj);
-    window->setVisible(true);
 
-    //! FontDaw: whatever placed the window (a saved layout, the platform, a display that is gone),
-    //! keep it on a screen the user can see; once now and once after the platform has settled it
+    //! FontDaw: whatever placed or sized the window (a saved layout, the platform, a display that
+    //! is gone), keep it at a usable size on a screen the user can see: before it is shown, after,
+    //! and while start-up settles
     WindowPlacement::ensureOnScreen(window);
-    QTimer::singleShot(0, window, [window]() {
-        WindowPlacement::ensureOnScreen(window);
-    });
+    window->setVisible(true);
+    WindowPlacement::ensureOnScreen(window);
+    WindowPlacement::watch(window);
 
     m_windows[ctxId->id] = window;
 

@@ -17,6 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 
 #include <gtest/gtest.h>
 
@@ -155,4 +156,39 @@ TEST_F(Ui_WindowPlacementTests, NoScreens_Unchanged)
     const WindowPlacement::Result result = WindowPlacement::place(geometry, {}, 0);
     EXPECT_EQ(result.action, Action::None);
     EXPECT_EQ(result.geometry, geometry);
+}
+
+TEST_F(Ui_WindowPlacementTests, ZeroSizeOnScreen_SafePlacement)
+{
+    //! The state seen in the log of the 0.1.1 test build: on the screen, but of size zero
+    //! (with the title bar of the frame only)
+    const QSize minimum(1050, 628);
+    const WindowPlacement::Result result = WindowPlacement::place(QRect(40, 62, 0, 28), { PRIMARY }, 0, minimum);
+    EXPECT_EQ(result.action, Action::SafePlacement);
+    EXPECT_EQ(result.geometry, WindowPlacement::safeGeometry(PRIMARY, minimum));
+    EXPECT_GE(result.geometry.width(), minimum.width());
+    EXPECT_GE(result.geometry.height(), minimum.height());
+}
+
+TEST_F(Ui_WindowPlacementTests, BelowMinimumSize_SafePlacement)
+{
+    const QSize minimum(1050, 628);
+    const WindowPlacement::Result result = WindowPlacement::place(QRect(100, 100, 900, 550), { PRIMARY }, 0, minimum);
+    EXPECT_EQ(result.action, Action::SafePlacement);
+    EXPECT_EQ(result.geometry, WindowPlacement::safeGeometry(PRIMARY, minimum));
+}
+
+TEST_F(Ui_WindowPlacementTests, SmallLaptop_MinimumSizeFits)
+{
+    //! A 1280x800 screen without the menu bar and the Dock; the main window's minimum size with
+    //! its title bar
+    const QRect laptop(0, 25, 1280, 705);
+    const QSize minimum(1050, 628);
+    const QRect geometry = WindowPlacement::safeGeometry(laptop, minimum);
+    EXPECT_EQ(geometry, QRect(76, 50, 1050, 628));
+    EXPECT_TRUE(laptop.contains(geometry));
+
+    const WindowPlacement::Result result = WindowPlacement::place(QRect(500, 300, 1150, 800), { laptop }, 0, minimum);
+    EXPECT_EQ(result.action, Action::Clamped);
+    EXPECT_TRUE(laptop.contains(result.geometry));
 }

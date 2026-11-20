@@ -17,13 +17,17 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 
 #include "windowplacement.h"
 
 #include <algorithm>
+#include <memory>
 
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QScreen>
+#include <QTimer>
 #include <QWindow>
 
 #include "log.h"
@@ -95,10 +99,12 @@ WindowPlacement::Result WindowPlacement::place(const QRect& frameGeometry, const
 
     const QRect primary = screens.at(primaryScreen >= 0 && primaryScreen < screens.size() ? primaryScreen : 0);
 
-    if (frameGeometry.width() < MIN_WIDTH || frameGeometry.height() < MIN_HEIGHT) {
+    const int minWidth = std::max(MIN_WIDTH, minimumSize.isValid() ? minimumSize.width() : 0);
+    const int minHeight = std::max(MIN_HEIGHT, minimumSize.isValid() ? minimumSize.height() : 0);
+    if (frameGeometry.width() < minWidth || frameGeometry.height() < minHeight) {
         result.action = Action::SafePlacement;
         result.geometry = safeGeometry(primary, minimumSize);
-        result.reason = "main window too small";
+        result.reason = "main window smaller than its minimum size";
         return result;
     }
 
@@ -130,20 +136,20 @@ WindowPlacement::Result WindowPlacement::place(const QRect& frameGeometry, const
     return result;
 }
 
-void WindowPlacement::ensureOnScreen(QWindow* window)
+bool WindowPlacement::ensureOnScreen(QWindow* window)
 {
-    if (!window || !window->isVisible()) {
-        return;
+    if (!window) {
+        return false;
     }
 
     //! On Wayland the compositor places windows; their position is not known to the app
     if (QGuiApplication::platformName().startsWith("wayland")) {
-        return;
+        return false;
     }
 
     const Qt::WindowStates states = window->windowStates();
     if (states & Qt::WindowMinimized) {
-        return;
+        return false;
     }
 
     QList<QRect> screens;
@@ -156,27 +162,78 @@ void WindowPlacement::ensureOnScreen(QWindow* window)
         screens.push_back(screen->availableGeometry());
     }
 
+    //! Before the window is shown its frame margins are not known yet, they count as zero
     const QMargins margins = window->frameMargins();
-    const QRect frame = window->frameGeometry();
+    const QRect frame = window->geometry().marginsAdded(margins);
     const QSize minimumFrameSize = window->minimumSize().grownBy(margins);
 
     const Result result = place(frame, screens, primaryIndex, minimumFrameSize);
     if (result.action == Action::None) {
-        return;
+        return false;
     }
 
     const bool maximizedOrFullScreen = states & (Qt::WindowMaximized | Qt::WindowFullScreen);
     if (maximizedOrFullScreen) {
         //! A maximized or full-screen window may extend past the available area by design;
-        //! only one that is not on a screen at all is put back
+        //! only one that is not usable is put back
         if (result.action != Action::SafePlacement) {
-            return;
+            return false;
         }
-        window->showNormal();
+        window->setWindowStates(Qt::WindowNoState);
     }
 
     LOGW() << "Moving the main window onto a visible screen (" << result.reason << "): "
            << rectToString(frame) << " -> " << rectToString(result.geometry);
 
     window->setGeometry(result.geometry.marginsRemoved(margins));
+    return true;
+}
+
+void WindowPlacement::watch(QWindow* window)
+{
+    if (!window) {
+        return;
+    }
+
+    struct State {
+        QElapsedTimer sinceStart;
+        bool pending = false;
+        int corrections = 0;
+    };
+
+    auto state = std::make_shared<State>();
+    state->sinceStart.start();
+
+    auto scheduleCheck = [window, state]() {
+        if (state->pending || state->corrections >= MAX_WATCH_CORRECTIONS) {
+            return;
+        }
+
+        //! After start-up the user places the window; only a size below its minimum is corrected
+        const bool startingUp = state->sinceStart.elapsed() < STARTUP_WATCH_MS;
+        if (!startingUp && window->width() >= window->minimumWidth() && window->height() >= window->minimumHeight()) {
+            return;
+        }
+
+        state->pending = true;
+        QTimer::singleShot(0, window, [window, state]() {
+            state->pending = false;
+            if (ensureOnScreen(window)) {
+                ++state->corrections;
+                if (state->corrections == MAX_WATCH_CORRECTIONS) {
+                    LOGW() << "The main window was moved " << MAX_WATCH_CORRECTIONS << " times; not checking it again";
+                }
+            }
+        });
+    };
+
+    QObject::connect(window, &QWindow::xChanged, window, scheduleCheck);
+    QObject::connect(window, &QWindow::yChanged, window, scheduleCheck);
+    QObject::connect(window, &QWindow::widthChanged, window, scheduleCheck);
+    QObject::connect(window, &QWindow::heightChanged, window, scheduleCheck);
+    QObject::connect(window, &QWindow::screenChanged, window, scheduleCheck);
+    QObject::connect(window, &QWindow::visibleChanged, window, scheduleCheck);
+
+    //! Once when the event loop has run, also if nothing changes
+    scheduleCheck();
 }
