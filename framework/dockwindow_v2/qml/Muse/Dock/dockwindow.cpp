@@ -530,10 +530,15 @@ void DockWindow::saveWindowGeometry()
     /// NOTE: The state of all dock widgets is also saved here,
     /// since the library does not provide the ability to save
     /// and restore only the application geometry.
-    const QByteArray state = windowState();
+    QString repairNote;
+    const QByteArray state = WindowGeometryCheck::repairNormalGeometry(windowState(), &repairNote);
     if (state.isEmpty()) {
         LOGW() << "Not saving the window geometry: the layout could not be serialized";
         return;
+    }
+
+    if (!repairNote.isEmpty()) {
+        LOGW() << "Saving the window geometry with a repaired layout: " << repairNote;
     }
 
     //! NOTE: A window that is being taken down can have no size; saving it would leave the next
@@ -551,9 +556,15 @@ void DockWindow::restoreGeometry()
 {
     TRACEFUNC;
 
-    const QByteArray geometry = uiState()->windowGeometry();
+    QString repairNote;
+    const QByteArray geometry = WindowGeometryCheck::repairNormalGeometry(uiState()->windowGeometry(), &repairNote,
+                                                                          true /*leaveFullScreen*/);
     if (geometry.isEmpty()) {
         return;
+    }
+
+    if (!repairNote.isEmpty()) {
+        LOGW() << "Restoring the window geometry with a repaired layout: " << repairNote;
     }
 
     //! NOTE: A saved main window that is empty, tiny or off every screen (e.g. saved by a window
@@ -582,7 +593,7 @@ void DockWindow::savePageState(const QString& pageName)
     }
 
     //! NOTE: Page layouts are restored relative to the main window, so only the size is checked
-    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(state, {});
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(state, {}, WindowGeometryCheck::Kind::PageLayout);
     if (!check.usable) {
         LOGW() << "Not saving the state of " << pageName << ": " << check.reason;
         return;
@@ -603,7 +614,7 @@ void DockWindow::restorePageState(const DockPageView* page)
 
     //! NOTE: A page layout saved from a main window with no usable size is not restored: the page's
     //! default layout is used
-    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(pageStateValNt.val, {});
+    const WindowGeometryCheck::Result check = WindowGeometryCheck::check(pageStateValNt.val, {}, WindowGeometryCheck::Kind::PageLayout);
     if (!check.usable) {
         LOGW() << "Not restoring the state of " << pageName << ", using the default: " << check.reason;
         pageStateValNt.val.clear();
