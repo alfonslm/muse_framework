@@ -32,6 +32,7 @@
 
 #include "ui/graphicsapiprovider.h"
 #include "ui/iuiengine.h"
+#include "windowplacement.h"
 
 #include "global/globalmodule.h"
 
@@ -204,6 +205,13 @@ bool GuiApplication::loadMainWindow(const muse::modularity::ContextPtr& ctxId)
     // and scale all sizes properly. https://github.com/musescore/MuseScore/issues/21148
     QQuickWindow* window = dynamic_cast<QQuickWindow*>(obj);
     window->setVisible(true);
+
+    //! FontDaw: whatever placed the window (a saved layout, the platform, a display that is gone),
+    //! keep it on a screen the user can see; once now and once after the platform has settled it
+    WindowPlacement::ensureOnScreen(window);
+    QTimer::singleShot(0, window, [window]() {
+        WindowPlacement::ensureOnScreen(window);
+    });
 
     m_windows[ctxId->id] = window;
 

@@ -28,6 +28,7 @@ set(MODULE_TEST_SRC
 
     ${CMAKE_CURRENT_LIST_DIR}/navigationcontroller_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/themeconverter_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/windowplacement_tests.cpp
     )
 
 set(MODULE_TEST_LINK
