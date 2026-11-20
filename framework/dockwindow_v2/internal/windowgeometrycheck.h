@@ -57,7 +57,10 @@ public:
     //! (e.g. on macOS, zoomed or full screen from the start), that normal geometry is saved as
     //! empty, and the restore gives a window of size zero. Such a normal geometry is replaced by
     //! the window's geometry. Returns the layout unchanged when there is nothing to repair.
-    static QByteArray repairNormalGeometry(const QByteArray& layout, QString* note = nullptr);
+    //! With \p leaveFullScreen (for a restore), a main window saved in full screen comes back as
+    //! a normal window at its normal geometry: the library would otherwise apply the full-screen
+    //! state at start, before the window is shown.
+    static QByteArray repairNormalGeometry(const QByteArray& layout, QString* note = nullptr, bool leaveFullScreen = false);
 
     //! The available geometry of each screen of the application
     static QList<QRect> availableScreenGeometries();

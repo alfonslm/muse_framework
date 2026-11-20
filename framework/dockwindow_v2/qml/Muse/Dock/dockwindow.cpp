@@ -538,7 +538,7 @@ void DockWindow::saveWindowGeometry()
     }
 
     if (!repairNote.isEmpty()) {
-        LOGW() << "Saving the window geometry with a repaired " << repairNote;
+        LOGW() << "Saving the window geometry with a repaired layout: " << repairNote;
     }
 
     //! NOTE: A window that is being taken down can have no size; saving it would leave the next
@@ -557,13 +557,14 @@ void DockWindow::restoreGeometry()
     TRACEFUNC;
 
     QString repairNote;
-    const QByteArray geometry = WindowGeometryCheck::repairNormalGeometry(uiState()->windowGeometry(), &repairNote);
+    const QByteArray geometry = WindowGeometryCheck::repairNormalGeometry(uiState()->windowGeometry(), &repairNote,
+                                                                          true /*leaveFullScreen*/);
     if (geometry.isEmpty()) {
         return;
     }
 
     if (!repairNote.isEmpty()) {
-        LOGW() << "Restoring the window geometry with a repaired " << repairNote;
+        LOGW() << "Restoring the window geometry with a repaired layout: " << repairNote;
     }
 
     //! NOTE: A saved main window that is empty, tiny or off every screen (e.g. saved by a window
