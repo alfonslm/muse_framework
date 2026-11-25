@@ -21,6 +21,8 @@
 
 #include "windowgeometrycheck.h"
 
+#include <cmath>
+
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -31,10 +33,23 @@
 using namespace muse::dock;
 
 namespace {
+//! An empty rect for values outside the sane limits, which the checks then refuse
 QRect rectFromJson(const QJsonValue& value)
 {
     const QJsonObject obj = value.toObject();
-    return QRect(obj.value("x").toInt(), obj.value("y").toInt(), obj.value("width").toInt(), obj.value("height").toInt());
+    const double x = obj.value("x").toDouble();
+    const double y = obj.value("y").toDouble();
+    const double width = obj.value("width").toDouble();
+    const double height = obj.value("height").toDouble();
+
+    const double maxCoordinate = WindowGeometryCheck::MAX_COORDINATE;
+    const double maxSize = WindowGeometryCheck::MAX_SIZE;
+    if (!(std::abs(x) <= maxCoordinate && std::abs(y) <= maxCoordinate
+          && width >= 0 && width <= maxSize && height >= 0 && height <= maxSize)) {
+        return QRect();
+    }
+
+    return QRect(static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height));
 }
 
 QString rectToString(const QRect& rect)
@@ -65,6 +80,63 @@ bool isTooSmall(const QRect& rect)
 }
 }
 
+WindowGeometryCheck::MainWindowState WindowGeometryCheck::mainWindowState(const QByteArray& layout)
+{
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(layout, &error);
+    if (layout.isEmpty() || error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return {};
+    }
+
+    const QJsonArray mainWindows = doc.object().value("mainWindows").toArray();
+    if (mainWindows.isEmpty()) {
+        return {};
+    }
+
+    const QJsonObject mainWindow = mainWindows.first().toObject();
+    MainWindowState state;
+    state.found = true;
+    state.windowState = mainWindow.value("windowState").toInt();
+    state.geometry = rectFromJson(mainWindow.value("geometry"));
+    state.normalGeometry = rectFromJson(mainWindow.value("normalGeometry"));
+    return state;
+}
+
+QByteArray WindowGeometryCheck::applyNormalGeometry(const QByteArray& layout, const QRect& normalGeometry)
+{
+    if (layout.isEmpty() || isTooSmall(normalGeometry)) {
+        return layout;
+    }
+
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(layout, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return layout;
+    }
+
+    QJsonObject root = doc.object();
+    QJsonArray mainWindows = root.value("mainWindows").toArray();
+    bool changed = false;
+
+    for (qsizetype i = 0; i < mainWindows.size(); ++i) {
+        QJsonObject mainWindow = mainWindows.at(i).toObject();
+        if (!isMaximizedOrFullScreen(mainWindow) || rectFromJson(mainWindow.value("normalGeometry")) == normalGeometry) {
+            continue;
+        }
+
+        mainWindow["normalGeometry"] = rectToJson(normalGeometry);
+        mainWindows[i] = mainWindow;
+        changed = true;
+    }
+
+    if (!changed) {
+        return layout;
+    }
+
+    root["mainWindows"] = mainWindows;
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
+}
+
 QByteArray WindowGeometryCheck::repairNormalGeometry(const QByteArray& layout, QString* note, bool leaveFullScreen)
 {
     if (layout.isEmpty()) {
@@ -84,26 +156,36 @@ QByteArray WindowGeometryCheck::repairNormalGeometry(const QByteArray& layout, Q
 
     for (qsizetype i = 0; i < mainWindows.size(); ++i) {
         QJsonObject mainWindow = mainWindows.at(i).toObject();
-        if (!isMaximizedOrFullScreen(mainWindow) || !mainWindow.contains("geometry")) {
+        if (!mainWindow.contains("geometry")) {
             continue;
         }
 
-        QRect normalGeometry = rectFromJson(mainWindow.value("normalGeometry"));
-        const QRect geometry = rectFromJson(mainWindow.value("geometry"));
-        if (isTooSmall(normalGeometry) && !isTooSmall(geometry)) {
-            notes << QString("normal geometry of the maximized or full-screen main window was %1, using %2")
-                .arg(rectToString(normalGeometry), rectToString(geometry));
-            normalGeometry = geometry;
-            mainWindow["normalGeometry"] = rectToJson(normalGeometry);
-            repaired = true;
+        if (isMaximizedOrFullScreen(mainWindow)) {
+            QRect normalGeometry = rectFromJson(mainWindow.value("normalGeometry"));
+            const QRect geometry = rectFromJson(mainWindow.value("geometry"));
+            if (isTooSmall(normalGeometry) && !isTooSmall(geometry)) {
+                notes << QString("normal geometry of the maximized or full-screen main window was %1, using %2")
+                    .arg(rectToString(normalGeometry), rectToString(geometry));
+                normalGeometry = geometry;
+                mainWindow["normalGeometry"] = rectToJson(normalGeometry);
+                repaired = true;
+            }
+
+            //! KDDockWidgets::WindowState::FullScreen = 4
+            const int windowState = mainWindow.value("windowState").toInt();
+            if (leaveFullScreen && (windowState & 4) && !isTooSmall(normalGeometry)) {
+                notes << QString("full-screen main window, restored as a normal window at %1").arg(rectToString(normalGeometry));
+                mainWindow["windowState"] = windowState & ~4;
+                mainWindow["geometry"] = rectToJson(normalGeometry);
+                repaired = true;
+            }
         }
 
-        //! KDDockWidgets::WindowState::FullScreen = 4
+        //! KDDockWidgets::WindowState::Minimized = 1
         const int windowState = mainWindow.value("windowState").toInt();
-        if (leaveFullScreen && (windowState & 4) && !isTooSmall(normalGeometry)) {
-            notes << QString("full-screen main window, restored as a normal window at %1").arg(rectToString(normalGeometry));
-            mainWindow["windowState"] = windowState & ~4;
-            mainWindow["geometry"] = rectToJson(normalGeometry);
+        if (leaveFullScreen && (windowState & 1)) {
+            notes << QString("minimized main window, restored as not minimized");
+            mainWindow["windowState"] = windowState & ~1;
             repaired = true;
         }
 

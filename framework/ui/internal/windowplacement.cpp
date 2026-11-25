@@ -193,6 +193,45 @@ bool WindowPlacement::ensureOnScreen(QWindow* window, bool onlyIfUnusable)
     return true;
 }
 
+void WindowPlacement::CorrectionLimit::endPeriodIfOver(qint64 nowMs)
+{
+    if (m_periodStart < 0 || nowMs - m_periodStart < PERIOD_MS) {
+        return;
+    }
+
+    //! A period that reached the limit counts towards stopping, unless a quiet period followed it
+    const bool capped = m_corrections >= MAX_CORRECTIONS;
+    const bool followedByQuietPeriod = nowMs - m_periodStart >= 2 * PERIOD_MS;
+    m_cappedPeriods = capped && !followedByQuietPeriod ? m_cappedPeriods + 1 : 0;
+
+    m_periodStart = -1;
+    m_corrections = 0;
+
+    if (m_cappedPeriods >= MAX_CAPPED_PERIODS) {
+        m_stopped = true;
+    }
+}
+
+bool WindowPlacement::CorrectionLimit::allowed(qint64 nowMs)
+{
+    endPeriodIfOver(nowMs);
+    return !m_stopped && m_corrections < MAX_CORRECTIONS;
+}
+
+void WindowPlacement::CorrectionLimit::corrected(qint64 nowMs)
+{
+    endPeriodIfOver(nowMs);
+    if (m_periodStart < 0) {
+        m_periodStart = nowMs;
+    }
+    ++m_corrections;
+}
+
+bool WindowPlacement::CorrectionLimit::stopped() const
+{
+    return m_stopped;
+}
+
 void WindowPlacement::watch(QWindow* window)
 {
     if (!window) {
@@ -202,14 +241,23 @@ void WindowPlacement::watch(QWindow* window)
     struct State {
         QElapsedTimer sinceStart;
         bool pending = false;
-        int corrections = 0;
+        bool stopLogged = false;
+        CorrectionLimit limit;
     };
 
     auto state = std::make_shared<State>();
     state->sinceStart.start();
 
     auto scheduleCheck = [window, state]() {
-        if (state->pending || state->corrections >= MAX_WATCH_CORRECTIONS) {
+        if (state->pending) {
+            return;
+        }
+
+        if (!state->limit.allowed(state->sinceStart.elapsed())) {
+            if (state->limit.stopped() && !state->stopLogged) {
+                state->stopLogged = true;
+                LOGW() << "The main window kept being moved; not checking it again in this run";
+            }
             return;
         }
 
@@ -223,9 +271,10 @@ void WindowPlacement::watch(QWindow* window)
         QTimer::singleShot(0, window, [window, state]() {
             state->pending = false;
             if (ensureOnScreen(window)) {
-                ++state->corrections;
-                if (state->corrections == MAX_WATCH_CORRECTIONS) {
-                    LOGW() << "The main window was moved " << MAX_WATCH_CORRECTIONS << " times; not checking it again";
+                state->limit.corrected(state->sinceStart.elapsed());
+                if (!state->limit.allowed(state->sinceStart.elapsed())) {
+                    LOGW() << "The main window was moved " << CorrectionLimit::MAX_CORRECTIONS << " times within "
+                           << CorrectionLimit::PERIOD_MS << " ms; not checking it again for a while";
                 }
             }
         });

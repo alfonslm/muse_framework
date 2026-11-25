@@ -192,3 +192,65 @@ TEST_F(Ui_WindowPlacementTests, SmallLaptop_MinimumSizeFits)
     EXPECT_EQ(result.action, Action::Clamped);
     EXPECT_TRUE(laptop.contains(result.geometry));
 }
+
+TEST_F(Ui_WindowPlacementTests, CorrectionLimit_PerPeriod)
+{
+    using Limit = WindowPlacement::CorrectionLimit;
+    Limit limit;
+
+    for (int i = 0; i < Limit::MAX_CORRECTIONS; ++i) {
+        ASSERT_TRUE(limit.allowed(100 + i));
+        limit.corrected(100 + i);
+    }
+    EXPECT_FALSE(limit.allowed(200));
+
+    //! The next period: allowed again, so the minimum-size rule keeps working later in the run
+    EXPECT_TRUE(limit.allowed(100 + Limit::PERIOD_MS));
+    EXPECT_FALSE(limit.stopped());
+}
+
+TEST_F(Ui_WindowPlacementTests, CorrectionLimit_StopsAfterCappedPeriodsInARow)
+{
+    using Limit = WindowPlacement::CorrectionLimit;
+    Limit limit;
+
+    //! A platform that keeps refusing: every period reaches the limit
+    qint64 now = 0;
+    for (int period = 0; period < Limit::MAX_CAPPED_PERIODS; ++period) {
+        now = period * Limit::PERIOD_MS;
+        for (int i = 0; i < Limit::MAX_CORRECTIONS; ++i) {
+            ASSERT_TRUE(limit.allowed(now + i));
+            limit.corrected(now + i);
+        }
+        EXPECT_FALSE(limit.allowed(now + Limit::MAX_CORRECTIONS));
+    }
+
+    EXPECT_FALSE(limit.allowed(Limit::MAX_CAPPED_PERIODS * Limit::PERIOD_MS));
+    EXPECT_TRUE(limit.stopped());
+    EXPECT_FALSE(limit.allowed(1000 * Limit::PERIOD_MS));
+}
+
+TEST_F(Ui_WindowPlacementTests, CorrectionLimit_QuietPeriodResetsTheCount)
+{
+    using Limit = WindowPlacement::CorrectionLimit;
+    Limit limit;
+
+    //! Capped periods with quiet periods between them never stop the watch
+    for (int round = 0; round < 2 * Limit::MAX_CAPPED_PERIODS; ++round) {
+        const qint64 start = round * 3 * Limit::PERIOD_MS;
+        for (int i = 0; i < Limit::MAX_CORRECTIONS; ++i) {
+            ASSERT_TRUE(limit.allowed(start + i));
+            limit.corrected(start + i);
+        }
+    }
+    EXPECT_TRUE(limit.allowed(100 * Limit::PERIOD_MS));
+    EXPECT_FALSE(limit.stopped());
+
+    //! A few corrections a period are always allowed
+    Limit few;
+    for (int period = 0; period < 10; ++period) {
+        EXPECT_TRUE(few.allowed(period * Limit::PERIOD_MS));
+        few.corrected(period * Limit::PERIOD_MS);
+    }
+    EXPECT_FALSE(few.stopped());
+}
