@@ -66,8 +66,18 @@ public:
     //! the window's geometry. Returns the layout unchanged when there is nothing to repair.
     //! With \p leaveFullScreen (for a restore), a main window saved in full screen comes back as
     //! a normal window at its normal geometry: the library would otherwise apply the full-screen
-    //! state at start, before the window is shown.
+    //! state at start, before the window is shown. A main window saved minimized comes back not
+    //! minimized: otherwise the app would start with no window on the screen.
     static QByteArray repairNormalGeometry(const QByteArray& layout, QString* note = nullptr, bool leaveFullScreen = false);
+
+    //! The first main window of a saved layout, as written; found = false if the layout can't be read
+    struct MainWindowState {
+        bool found = false;
+        int windowState = 0; // KDDockWidgets::WindowState: 1 minimized, 2 maximized, 4 full screen
+        QRect geometry;
+        QRect normalGeometry;
+    };
+    static MainWindowState mainWindowState(const QByteArray& layout);
 
     //! Writes \p normalGeometry as the normal geometry of a main window saved maximized or in full
     //! screen, which the restore applies first (see NormalGeometryTracker). Returns the layout

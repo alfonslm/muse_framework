@@ -33,46 +33,65 @@ bool isWithin(int a, int b, int tolerance)
     return std::abs(a - b) <= tolerance;
 }
 
-bool fills(const QRect& frame, const QRect& area, int tolerance)
+bool isLargeEnough(const QRect& geometry)
 {
-    return isWithin(frame.left(), area.left(), tolerance) && isWithin(frame.top(), area.top(), tolerance)
-           && isWithin(frame.right(), area.right(), tolerance) && isWithin(frame.bottom(), area.bottom(), tolerance);
+    return geometry.width() >= WindowGeometryCheck::MIN_WIDTH && geometry.height() >= WindowGeometryCheck::MIN_HEIGHT;
 }
+}
+
+bool NormalGeometryTracker::isZoomed(const QRect& frame, const QList<Screen>& screens)
+{
+    for (const Screen& screen : screens) {
+        const QRect& area = screen.availableGeometry;
+        if (isWithin(frame.left(), area.left(), ZOOM_TOLERANCE) && isWithin(frame.right(), area.right(), ZOOM_TOLERANCE)
+            && isWithin(frame.bottom(), area.bottom(), ZOOM_TOLERANCE)
+            && frame.top() >= area.top() - ZOOM_TOLERANCE && frame.top() <= area.top() + ZOOM_TOP_TOLERANCE) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool NormalGeometryTracker::isUsable(const QRect& geometry, const QRect& frameGeometry, const QList<Screen>& screens)
 {
-    if (geometry.width() < WindowGeometryCheck::MIN_WIDTH || geometry.height() < WindowGeometryCheck::MIN_HEIGHT) {
+    if (!isLargeEnough(geometry)) {
         return false;
     }
 
+    //! Full screen (or on its way there), or zoomed: not the size the user gave the window
     for (const Screen& screen : screens) {
-        //! Full screen (or on its way there), or zoomed: not the size the user gave the window
-        if (frameGeometry.contains(screen.geometry) || fills(frameGeometry, screen.availableGeometry, ZOOM_TOLERANCE)) {
+        if (frameGeometry.contains(screen.geometry)) {
             return false;
         }
     }
 
-    return true;
+    return !isZoomed(frameGeometry, screens);
+}
+
+void NormalGeometryTracker::seedRestored(const QRect& normalGeometry)
+{
+    if (isLargeEnough(normalGeometry)) {
+        m_restored = normalGeometry;
+        m_committed = normalGeometry;
+    }
 }
 
 void NormalGeometryTracker::seed(const QRect& geometry, const QRect& frameGeometry, bool normalState, const QList<Screen>& screens)
 {
-    if (normalState && isUsable(geometry, frameGeometry, screens)) {
-        m_committed = geometry;
-    }
+    m_committed = normalState && isUsable(geometry, frameGeometry, screens) ? geometry : m_restored;
     m_candidate = QRect();
 }
 
-bool NormalGeometryTracker::onGeometryChanged(const QRect& geometry, const QRect& frameGeometry, bool normalState,
-                                              const QList<Screen>& screens)
+NormalGeometryTracker::Change NormalGeometryTracker::onGeometryChanged(const QRect& geometry, const QRect& frameGeometry,
+                                                                       bool normalState, const QList<Screen>& screens)
 {
     if (!normalState || !isUsable(geometry, frameGeometry, screens)) {
-        return false;
+        m_candidate = QRect();
+        return Change::Rejected;
     }
 
     m_candidate = geometry;
-    return true;
+    return Change::Candidate;
 }
 
 void NormalGeometryTracker::onStateChanged(bool normalState)

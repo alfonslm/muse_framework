@@ -53,11 +53,6 @@ public:
 
     //! How long after the window is shown every change of its geometry is checked
     static constexpr int STARTUP_WATCH_MS = 5000;
-    //! At most this many corrections by the watch within WATCH_CORRECTIONS_PERIOD_MS, so a platform
-    //! that keeps refusing a geometry can't make it loop; the count starts again after the period,
-    //! so the minimum-size rule keeps working for the whole run
-    static constexpr int MAX_WATCH_CORRECTIONS = 10;
-    static constexpr int WATCH_CORRECTIONS_PERIOD_MS = 5000;
 
     enum class Action {
         None,     // already fully on a screen
@@ -84,6 +79,34 @@ public:
     //! changed. With \p onlyIfUnusable (before the window is shown) a window that would only be
     //! clamped is left to the platform's own placement, which happens when it is shown.
     static bool ensureOnScreen(QWindow* window, bool onlyIfUnusable = false);
+
+    //! Limits the watch's corrections, so a platform that keeps refusing a geometry can't make it
+    //! loop: at most MAX_CORRECTIONS in a period of PERIOD_MS; the count starts again in the next
+    //! period, so the minimum-size rule keeps working for the run. After MAX_CAPPED_PERIODS periods
+    //! in a row that reached the limit, the watch stops for the run. Pure, for tests: the caller
+    //! passes the time.
+    class CorrectionLimit
+    {
+    public:
+        static constexpr int MAX_CORRECTIONS = 10;
+        static constexpr qint64 PERIOD_MS = 5000;
+        static constexpr int MAX_CAPPED_PERIODS = 3;
+
+        //! Whether a correction may be made now
+        bool allowed(qint64 nowMs);
+        //! A correction was made now
+        void corrected(qint64 nowMs);
+        //! The watch has stopped for the run
+        bool stopped() const;
+
+    private:
+        void endPeriodIfOver(qint64 nowMs);
+
+        qint64 m_periodStart = -1;
+        int m_corrections = 0;
+        int m_cappedPeriods = 0;
+        bool m_stopped = false;
+    };
 
     //! Checks the window again after each change of its geometry: every change during
     //! STARTUP_WATCH_MS from now, afterwards only a size below its minimum

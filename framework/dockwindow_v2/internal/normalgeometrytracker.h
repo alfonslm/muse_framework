@@ -42,23 +42,36 @@ class NormalGeometryTracker
 public:
     static constexpr int SETTLE_MS = 300;
 
-    //! A window whose frame is within this many pixels of a screen's available geometry on every
-    //! edge counts as zoomed: on macOS a zoomed window can be reported in the normal state
+    //! A window whose frame is within this many pixels of a screen's available geometry on the
+    //! left, right and bottom edges, and within ZOOM_TOP_TOLERANCE at the top, counts as zoomed: on
+    //! macOS a zoomed window can be reported in the normal state. The top is looser because before
+    //! the window is shown its frame is not known yet, and its geometry starts below the title bar.
     static constexpr int ZOOM_TOLERANCE = 8;
+    static constexpr int ZOOM_TOP_TOLERANCE = 64;
 
     struct Screen {
         QRect geometry;          // the whole screen
         QRect availableGeometry; // without the menu bar, the Dock or a task bar
     };
 
+    enum class Change {
+        Candidate, // taken: start (or restart) the settle timer
+        Rejected   // not a normal size: any pending candidate is dropped, stop the settle timer
+    };
+
     //! \p geometry is the window's geometry without its frame (what is saved and restored),
     //! \p frameGeometry with it (what is compared with the screens)
 
-    //! The first geometry, e.g. right after a layout is restored: committed at once if it is usable
+    //! The normal geometry read from a restored layout whose main window was maximized or in full
+    //! screen: the size the user had, which the window itself can't show while it is not normal
+    void seedRestored(const QRect& normalGeometry);
+
+    //! The window's geometry right after the layout is restored, and again once it is shown (when
+    //! its frame is known): committed if it is a normal size; otherwise the restored normal geometry
+    //! (if any) is kept
     void seed(const QRect& geometry, const QRect& frameGeometry, bool normalState, const QList<Screen>& screens);
 
-    //! Returns whether the geometry was taken as a candidate (then start the settle timer)
-    bool onGeometryChanged(const QRect& geometry, const QRect& frameGeometry, bool normalState, const QList<Screen>& screens);
+    Change onGeometryChanged(const QRect& geometry, const QRect& frameGeometry, bool normalState, const QList<Screen>& screens);
 
     void onStateChanged(bool normalState);
 
@@ -68,9 +81,12 @@ public:
     //! The last committed normal geometry; empty if there is none
     QRect normalGeometry() const;
 
+    static bool isZoomed(const QRect& frameGeometry, const QList<Screen>& screens);
+
 private:
     static bool isUsable(const QRect& geometry, const QRect& frameGeometry, const QList<Screen>& screens);
 
+    QRect m_restored;
     QRect m_committed;
     QRect m_candidate;
 };

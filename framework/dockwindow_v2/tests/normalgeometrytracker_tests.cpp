@@ -50,7 +50,8 @@ const QRect ZOOMED = geometryInFrame(SCREENS.first().availableGeometry);
 
 bool change(NormalGeometryTracker& tracker, const QRect& geometry, bool normalState, const QList<Screen>& screens = SCREENS)
 {
-    return tracker.onGeometryChanged(geometry, frameOf(geometry), normalState, screens);
+    return tracker.onGeometryChanged(geometry, frameOf(geometry), normalState, screens)
+           == NormalGeometryTracker::Change::Candidate;
 }
 
 NormalGeometryTracker seeded(const QRect& geometry = NORMAL)
@@ -87,7 +88,7 @@ TEST(Dock_NormalGeometryTrackerTests, ResizeThenFullScreen_KeepsLastNormalSize)
     EXPECT_EQ(tracker.normalGeometry(), RESIZED);
 
     tracker.onStateChanged(false);
-    EXPECT_FALSE(tracker.onGeometryChanged(FULL_SCREEN, FULL_SCREEN, false, SCREENS));
+    EXPECT_EQ(tracker.onGeometryChanged(FULL_SCREEN, FULL_SCREEN, false, SCREENS), NormalGeometryTracker::Change::Rejected);
     EXPECT_EQ(tracker.normalGeometry(), RESIZED);
 }
 
@@ -103,7 +104,7 @@ TEST(Dock_NormalGeometryTrackerTests, TransitionFrames_NotTaken)
     EXPECT_EQ(tracker.normalGeometry(), NORMAL);
 
     //! The full-screen frame itself is never taken, even when reported in the normal state
-    EXPECT_FALSE(tracker.onGeometryChanged(FULL_SCREEN, FULL_SCREEN, true, SCREENS));
+    EXPECT_EQ(tracker.onGeometryChanged(FULL_SCREEN, FULL_SCREEN, true, SCREENS), NormalGeometryTracker::Change::Rejected);
     tracker.commit(true);
     EXPECT_EQ(tracker.normalGeometry(), NORMAL);
 }
@@ -170,8 +171,69 @@ TEST(Dock_NormalGeometryTrackerTests, SecondScreen_FullScreenAndZoomThereNotTake
     tracker.seed(onSecond, frameOf(onSecond), true, twoScreens);
     EXPECT_EQ(tracker.normalGeometry(), onSecond);
 
-    EXPECT_FALSE(tracker.onGeometryChanged(QRect(-1920, 0, 1920, 1080), QRect(-1920, 0, 1920, 1080), true, twoScreens));
+    EXPECT_EQ(tracker.onGeometryChanged(QRect(-1920, 0, 1920, 1080), QRect(-1920, 0, 1920, 1080), true, twoScreens),
+              NormalGeometryTracker::Change::Rejected);
     EXPECT_FALSE(change(tracker, geometryInFrame(QRect(-1920, 25, 1920, 1055)), true, twoScreens));
     tracker.commit(true);
     EXPECT_EQ(tracker.normalGeometry(), onSecond);
+}
+
+TEST(Dock_NormalGeometryTrackerTests, RejectedFrame_DropsPendingCandidate)
+{
+    //! A frame between normal and full screen, then the full-screen frame reported as normal, then
+    //! the settle timer: the frame between must not be committed
+    NormalGeometryTracker tracker = seeded();
+
+    EXPECT_TRUE(change(tracker, QRect(50, 60, 1350, 800), true));
+    EXPECT_EQ(tracker.onGeometryChanged(FULL_SCREEN, FULL_SCREEN, true, SCREENS), NormalGeometryTracker::Change::Rejected);
+    tracker.commit(true);
+    EXPECT_EQ(tracker.normalGeometry(), NORMAL);
+}
+
+TEST(Dock_NormalGeometryTrackerTests, StartedMaximized_KeepsRestoredNormalSize)
+{
+    //! A layout saved zoomed or maximized is restored in that state: the window never shows its
+    //! normal size during the run, so the restored one is kept for the next save
+    NormalGeometryTracker tracker;
+    tracker.seedRestored(NORMAL);
+    tracker.seed(ZOOMED, frameOf(ZOOMED), false, SCREENS);
+    EXPECT_EQ(tracker.normalGeometry(), NORMAL);
+
+    EXPECT_FALSE(change(tracker, ZOOMED, false));
+    tracker.commit(false);
+    EXPECT_EQ(tracker.normalGeometry(), NORMAL);
+
+    //! Shown, still zoomed (reported as normal, as macOS may): still the restored size
+    tracker.seed(ZOOMED, frameOf(ZOOMED), true, SCREENS);
+    EXPECT_EQ(tracker.normalGeometry(), NORMAL);
+
+    //! Un-zoomed to a normal size: that one from now on
+    EXPECT_TRUE(change(tracker, RESIZED, true));
+    tracker.commit(true);
+    EXPECT_EQ(tracker.normalGeometry(), RESIZED);
+
+    //! An empty or tiny restored normal geometry (the hotfix's case) is not kept
+    NormalGeometryTracker empty;
+    empty.seedRestored(QRect(0, 0, 0, 0));
+    EXPECT_TRUE(empty.normalGeometry().isEmpty());
+}
+
+TEST(Dock_NormalGeometryTrackerTests, ZoomedBeforeShow_NotTakenAsSeed)
+{
+    //! Before the window is shown its frame is not known, so the frame equals the geometry, which
+    //! starts below the title bar: a restored zoomed window (0,61 1470x822 on this screen)
+    const QRect zoomedClient(0, 61, 1470, 822);
+    NormalGeometryTracker tracker;
+    tracker.seedRestored(NORMAL);
+    tracker.seed(zoomedClient, zoomedClient, true, SCREENS);
+    EXPECT_EQ(tracker.normalGeometry(), NORMAL);
+
+    NormalGeometryTracker noRestored;
+    noRestored.seed(zoomedClient, zoomedClient, true, SCREENS);
+    EXPECT_TRUE(noRestored.normalGeometry().isEmpty());
+
+    //! A tall window that does not reach the sides is a normal size
+    const QRect tall(200, 61, 1000, 822);
+    noRestored.seed(tall, tall, true, SCREENS);
+    EXPECT_EQ(noRestored.normalGeometry(), tall);
 }
