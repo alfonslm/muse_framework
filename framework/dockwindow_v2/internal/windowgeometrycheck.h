@@ -47,10 +47,47 @@ public:
         QString reason; // why not, for the log
     };
 
+    enum class Kind {
+        MainWindow, // the main window's layout: its geometry is restored
+        PageLayout  // a page's layout, restored relative to the main window: its geometry is not
+    };
+
     //! `screens`: the available geometry of each screen. When empty, the position is not checked
     //! (a page layout is restored relative to the main window, so only its size matters).
     //! A layout that can't be read, or that has no main window, is left to the library to judge.
-    static Result check(const QByteArray& layout, const QList<QRect>& screens);
+    //! For Kind::MainWindow the normal geometry of a maximized or full-screen window is checked too,
+    //! since the restore applies it; a page layout's restore skips the main window's geometry.
+    static Result check(const QByteArray& layout, const QList<QRect>& screens, Kind kind = Kind::MainWindow);
+
+    //! A maximized or full-screen main window is restored by first applying its saved normal
+    //! geometry, then the state. When the window was never in the normal state during the run
+    //! (e.g. on macOS, zoomed or full screen from the start), that normal geometry is saved as
+    //! empty, and the restore gives a window of size zero. Such a normal geometry is replaced by
+    //! the window's geometry. Returns the layout unchanged when there is nothing to repair.
+    //! With \p leaveFullScreen (for a restore), a main window saved in full screen comes back as
+    //! a normal window at its normal geometry: the library would otherwise apply the full-screen
+    //! state at start, before the window is shown. A main window saved minimized comes back not
+    //! minimized: otherwise the app would start with no window on the screen.
+    static QByteArray repairNormalGeometry(const QByteArray& layout, QString* note = nullptr, bool leaveFullScreen = false);
+
+    //! The first main window of a saved layout, as written; found = false if the layout can't be read
+    struct MainWindowState {
+        bool found = false;
+        int windowState = 0; // KDDockWidgets::WindowState: 1 minimized, 2 maximized, 4 full screen
+        QRect geometry;
+        QRect normalGeometry;
+    };
+    static MainWindowState mainWindowState(const QByteArray& layout);
+
+    //! Writes \p normalGeometry as the normal geometry of a main window saved maximized or in full
+    //! screen, which the restore applies first (see NormalGeometryTracker). Returns the layout
+    //! unchanged when \p normalGeometry is not usable or there is nothing to write.
+    static QByteArray applyNormalGeometry(const QByteArray& layout, const QRect& normalGeometry);
+
+    //! Coordinates and sizes outside these limits are not read: they come from a damaged file, and
+    //! sums of them could overflow
+    static constexpr int MAX_COORDINATE = 1000000;
+    static constexpr int MAX_SIZE = 100000;
 
     //! The available geometry of each screen of the application
     static QList<QRect> availableScreenGeometries();

@@ -32,6 +32,7 @@
 
 #include "ui/graphicsapiprovider.h"
 #include "ui/iuiengine.h"
+#include "windowplacement.h"
 
 #include "global/globalmodule.h"
 
@@ -203,7 +204,15 @@ bool GuiApplication::loadMainWindow(const muse::modularity::ContextPtr& ctxId)
     // The main window must be shown at this point so KDDockWidgets can read its size correctly
     // and scale all sizes properly. https://github.com/musescore/MuseScore/issues/21148
     QQuickWindow* window = dynamic_cast<QQuickWindow*>(obj);
+
+    //! FontDaw: whatever placed or sized the window (a saved layout, the platform, a display that
+    //! is gone), keep it at a usable size on a screen the user can see: before it is shown, after,
+    //! and while start-up settles. Before it is shown only an unusable window is placed; a usable
+    //! one, e.g. the default size at a first start, is left to the platform's placement
+    WindowPlacement::ensureOnScreen(window, true /*onlyIfUnusable*/);
     window->setVisible(true);
+    WindowPlacement::ensureOnScreen(window);
+    WindowPlacement::watch(window);
 
     m_windows[ctxId->id] = window;
 

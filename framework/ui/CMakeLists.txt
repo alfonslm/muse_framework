@@ -48,6 +48,8 @@ target_sources(muse_ui PRIVATE
 
     internal/guiapplication.cpp
     internal/guiapplication.h
+    internal/windowplacement.cpp
+    internal/windowplacement.h
     internal/uistate.cpp
     internal/uistate.h
     internal/uiengine.cpp

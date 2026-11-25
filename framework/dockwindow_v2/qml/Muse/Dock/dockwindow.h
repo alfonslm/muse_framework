@@ -23,6 +23,7 @@
 #pragma once
 
 #include <QQuickItem>
+#include <QTimer>
 #include <qqmlintegration.h>
 
 #include "async/asyncable.h"
@@ -36,6 +37,7 @@
 
 #include "idockwindow.h"
 #include "internal/dockbase.h"
+#include "internal/normalgeometrytracker.h"
 
 Q_MOC_INCLUDE(< QQuickWindow >)
 
@@ -146,6 +148,9 @@ private:
 
     void notifyAboutDocksOpenStatus();
 
+    //! FontDaw (FD-148): remember the window's real normal geometry for the saved layout
+    void trackNormalGeometry();
+
     KDDockWidgets::QtQuick::MainWindow* m_mainWindow = nullptr;
     DockPageView* m_currentPage = nullptr;
     uicomponents::QmlListProperty<DockToolBarView> m_toolBars;
@@ -156,5 +161,8 @@ private:
 
     bool m_hasGeometryBeenRestored = false;
     bool m_reloadCurrentPageAllowed = false;
+
+    NormalGeometryTracker m_normalGeometryTracker;
+    QTimer m_normalGeometrySettleTimer;
 };
 }
