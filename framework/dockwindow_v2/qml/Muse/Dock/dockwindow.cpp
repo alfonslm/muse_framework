@@ -32,6 +32,13 @@
 #include "kddockwidgets/src/core/Group.h"
 #include "kddockwidgets/src/core/Window_p.h"
 
+#include <memory>
+
+#include <QGuiApplication>
+#include <QPointer>
+#include <QQuickWindow>
+#include <QScreen>
+
 #include "global/async/async.h"
 
 #include "dockcentralview.h"
@@ -52,6 +59,11 @@ using namespace muse::dock;
 using namespace muse::async;
 
 namespace muse::dock {
+static QString rectToString(const QRect& rect)
+{
+    return QString("%1,%2 %3x%4").arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height());
+}
+
 static const QList<Location> POSSIBLE_LOCATIONS {
     Location::Left,
     Location::Right,
@@ -187,6 +199,7 @@ void DockWindow::init()
 {
     clearRegistry(iocContext()->id);
     restoreGeometry();
+    trackNormalGeometry();
 
     dockWindowProvider()->init(this);
 
@@ -530,8 +543,12 @@ void DockWindow::saveWindowGeometry()
     /// NOTE: The state of all dock widgets is also saved here,
     /// since the library does not provide the ability to save
     /// and restore only the application geometry.
+    //! FontDaw (FD-148): a window zoomed or in full screen is saved with the normal geometry it last
+    //! had, which the platform does not always report; the repair below stays as a safety net
+    const QByteArray layout = WindowGeometryCheck::applyNormalGeometry(windowState(), m_normalGeometryTracker.normalGeometry());
+
     QString repairNote;
-    const QByteArray state = WindowGeometryCheck::repairNormalGeometry(windowState(), &repairNote);
+    const QByteArray state = WindowGeometryCheck::repairNormalGeometry(layout, &repairNote);
     if (state.isEmpty()) {
         LOGW() << "Not saving the window geometry: the layout could not be serialized";
         return;
@@ -549,15 +566,94 @@ void DockWindow::saveWindowGeometry()
         return;
     }
 
+    const WindowGeometryCheck::MainWindowState saved = WindowGeometryCheck::mainWindowState(state);
+    const QQuickWindow* window = this->window();
+    LOGI() << "Saving the window geometry: window state " << (window ? int(window->windowStates()) : -1)
+           << ", tracked normal geometry " << rectToString(m_normalGeometryTracker.normalGeometry())
+           << ", saved normal geometry " << rectToString(saved.normalGeometry)
+           << " (saved state " << saved.windowState << ")";
+
     uiState()->setWindowGeometry(state);
+}
+
+void DockWindow::trackNormalGeometry()
+{
+    QPointer<QQuickWindow> window = this->window();
+    if (!window) {
+        LOGW() << "No main window: its normal geometry is not tracked";
+        return;
+    }
+
+    //! Everything here runs on the GUI thread: the window's signals and the settle timer
+
+    const auto isNormalState = [window]() {
+        return window && !(window->windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized));
+    };
+
+    const auto screens = []() {
+        QList<NormalGeometryTracker::Screen> result;
+        for (const QScreen* screen : QGuiApplication::screens()) {
+            result.push_back({ screen->geometry(), screen->availableGeometry() });
+        }
+        return result;
+    };
+
+    m_normalGeometrySettleTimer.setSingleShot(true);
+    m_normalGeometrySettleTimer.setInterval(NormalGeometryTracker::SETTLE_MS);
+    connect(&m_normalGeometrySettleTimer, &QTimer::timeout, this, [this, isNormalState]() {
+        m_normalGeometryTracker.commit(isNormalState());
+    });
+
+    const auto onGeometryChanged = [this, window, isNormalState, screens]() {
+        if (!window) {
+            return;
+        }
+        const NormalGeometryTracker::Change change
+            = m_normalGeometryTracker.onGeometryChanged(window->geometry(), window->frameGeometry(), isNormalState(), screens());
+        if (change == NormalGeometryTracker::Change::Candidate) {
+            m_normalGeometrySettleTimer.start();
+        } else {
+            m_normalGeometrySettleTimer.stop();
+        }
+    };
+
+    connect(window, &QWindow::xChanged, this, onGeometryChanged);
+    connect(window, &QWindow::yChanged, this, onGeometryChanged);
+    connect(window, &QWindow::widthChanged, this, onGeometryChanged);
+    connect(window, &QWindow::heightChanged, this, onGeometryChanged);
+    connect(window, &QWindow::windowStateChanged, this, [this, isNormalState, onGeometryChanged]() {
+        m_normalGeometryTracker.onStateChanged(isNormalState());
+        if (isNormalState()) {
+            //! Back to normal: the geometry may have changed before the state did
+            onGeometryChanged();
+        } else {
+            m_normalGeometrySettleTimer.stop();
+        }
+    });
+
+    //! Once shown, the seed is checked again: by then the platform usually reports the frame, which
+    //! it does not before (on some platforms only a little later), e.g. for a zoomed window that
+    //! the check before showing could not tell apart
+    auto reseed = std::make_shared<QMetaObject::Connection>();
+    *reseed = connect(window, &QWindow::visibleChanged, this, [this, window, isNormalState, screens, reseed](bool visible) {
+        if (!visible || !window) {
+            return;
+        }
+        QObject::disconnect(*reseed);
+        m_normalGeometryTracker.seed(window->geometry(), window->frameGeometry(), isNormalState(), screens());
+    });
+
+    m_normalGeometryTracker.seed(window->geometry(), window->frameGeometry(), isNormalState(), screens());
 }
 
 void DockWindow::restoreGeometry()
 {
     TRACEFUNC;
 
+    const QByteArray savedLayout = uiState()->windowGeometry();
+
     QString repairNote;
-    const QByteArray geometry = WindowGeometryCheck::repairNormalGeometry(uiState()->windowGeometry(), &repairNote,
+    const QByteArray geometry = WindowGeometryCheck::repairNormalGeometry(savedLayout, &repairNote,
                                                                           true /*leaveFullScreen*/);
     if (geometry.isEmpty()) {
         return;
@@ -573,6 +669,14 @@ void DockWindow::restoreGeometry()
     if (!check.usable) {
         LOGW() << "Not restoring the saved window geometry, using the default: " << check.reason;
         return;
+    }
+
+    //! FontDaw (FD-148): a main window saved maximized or in full screen can't show its normal size
+    //! while it is restored in that state; remember the saved one (unless it was repaired) for the
+    //! next save
+    const WindowGeometryCheck::MainWindowState saved = WindowGeometryCheck::mainWindowState(savedLayout);
+    if (saved.windowState & (2 | 4)) {
+        m_normalGeometryTracker.seedRestored(saved.normalGeometry);
     }
 
     if (restoreLayout(geometry)) {

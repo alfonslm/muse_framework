@@ -228,3 +228,103 @@ TEST(Dock_WindowGeometryCheckTests, PageLayoutOfMaximizedWindowWithEmptyNormalGe
         EXPECT_FALSE(WindowGeometryCheck::check(layout, ONE_SCREEN, WindowGeometryCheck::Kind::MainWindow).usable);
     }
 }
+
+TEST(Dock_WindowGeometryCheckTests, ApplyNormalGeometry_WritesItForMaximizedAndFullScreen)
+{
+    const QRect screen(0, 0, 1470, 956);
+    const QRect normal(100, 80, 1200, 750);
+
+    for (int state : { 2, 4 }) {
+        //! The saved normal geometry may be empty (macOS) or stale; the tracked one is written
+        for (const QRect& saved : { QRect(), QRect(0, 0, 1470, 956) }) {
+            const QByteArray applied = WindowGeometryCheck::applyNormalGeometry(
+                layoutWithStateAndNormalGeometry(state, screen, saved), normal);
+            EXPECT_EQ(normalGeometryOf(applied), normal);
+            EXPECT_TRUE(WindowGeometryCheck::check(applied, { screen }).usable);
+        }
+    }
+
+    //! A full-screen layout saved this way is restored as a normal window at that size
+    const QByteArray restored = WindowGeometryCheck::repairNormalGeometry(
+        WindowGeometryCheck::applyNormalGeometry(layoutWithStateAndNormalGeometry(4, screen, QRect()), normal),
+        nullptr, true /*leaveFullScreen*/);
+    EXPECT_EQ(rectOf(restored, "geometry"), normal);
+    EXPECT_EQ(mainWindowOf(restored)["windowState"].toInt(), 0);
+}
+
+TEST(Dock_WindowGeometryCheckTests, ApplyNormalGeometry_LeavesOthersAlone)
+{
+    const QRect normal(100, 80, 1200, 750);
+    const QByteArray normalState = layoutWithStateAndNormalGeometry(0, QRect(10, 10, 1000, 700), QRect());
+    const QByteArray unreadable("not a layout");
+    const QByteArray fullScreen = layoutWithStateAndNormalGeometry(4, QRect(0, 0, 1470, 956), QRect());
+
+    EXPECT_EQ(WindowGeometryCheck::applyNormalGeometry(normalState, normal), normalState);
+    EXPECT_EQ(WindowGeometryCheck::applyNormalGeometry(unreadable, normal), unreadable);
+
+    //! No tracked normal geometry (or an unusable one): the layout stays as it is
+    EXPECT_EQ(WindowGeometryCheck::applyNormalGeometry(fullScreen, QRect()), fullScreen);
+    EXPECT_EQ(WindowGeometryCheck::applyNormalGeometry(fullScreen, QRect(0, 0, 87, 21)), fullScreen);
+}
+
+TEST(Dock_WindowGeometryCheckTests, ValuesOutOfRange_NotUsable)
+{
+    //! Values that could overflow when added (a QRect can't even hold some of them): written into
+    //! the layout as numbers, read as an empty rect, refused
+    const auto layoutWithValues = [](double x, double y, double width, double height) {
+        QJsonObject root = QJsonDocument::fromJson(layoutWithMainWindow(QRect(0, 0, 1000, 700))).object();
+        QJsonArray mainWindows = root["mainWindows"].toArray();
+        QJsonObject mainWindow = mainWindows[0].toObject();
+        QJsonObject rect;
+        rect["x"] = x;
+        rect["y"] = y;
+        rect["width"] = width;
+        rect["height"] = height;
+        mainWindow["geometry"] = rect;
+        mainWindows[0] = mainWindow;
+        root["mainWindows"] = mainWindows;
+        return QJsonDocument(root).toJson(QJsonDocument::Compact);
+    };
+
+    EXPECT_FALSE(WindowGeometryCheck::check(layoutWithValues(2147483000, 100, 1280, 800), ONE_SCREEN).usable);
+    EXPECT_FALSE(WindowGeometryCheck::check(layoutWithValues(100, 100, 2147483000, 800), {}).usable);
+    EXPECT_FALSE(WindowGeometryCheck::check(layoutWithValues(-2147483000, 100, 1280, 800), ONE_SCREEN).usable);
+    EXPECT_FALSE(WindowGeometryCheck::check(layoutWithValues(1e12, 100, 1280, 800), ONE_SCREEN).usable);
+
+    //! Large but sane values are still read (and judged by position)
+    EXPECT_TRUE(WindowGeometryCheck::check(layoutWithValues(999000, 100, 1280, 800), {}).usable);
+    EXPECT_FALSE(WindowGeometryCheck::check(layoutWithValues(999000, 100, 1280, 800), ONE_SCREEN).usable);
+}
+
+TEST(Dock_WindowGeometryCheckTests, MainWindowState_ReadsTheFirstMainWindow)
+{
+    const QRect screen(0, 0, 1470, 956);
+    const QRect normal(100, 80, 1200, 750);
+    const WindowGeometryCheck::MainWindowState state
+        = WindowGeometryCheck::mainWindowState(layoutWithStateAndNormalGeometry(2, screen, normal));
+    EXPECT_TRUE(state.found);
+    EXPECT_EQ(state.windowState, 2);
+    EXPECT_EQ(state.geometry, screen);
+    EXPECT_EQ(state.normalGeometry, normal);
+
+    EXPECT_FALSE(WindowGeometryCheck::mainWindowState(QByteArray("not a layout")).found);
+    EXPECT_FALSE(WindowGeometryCheck::mainWindowState(QByteArray()).found);
+}
+
+TEST(Dock_WindowGeometryCheckTests, RestoreOfMinimized_ComesBackNotMinimized)
+{
+    //! Restored minimized, the app would start with no window on the screen (on macOS: only in the Dock).
+    //! The library writes the minimized state alone (1), also for a window minimized from zoomed
+    const QRect geometry(100, 80, 1200, 750);
+    {
+        QString note;
+        const QByteArray restored = WindowGeometryCheck::repairNormalGeometry(
+            layoutWithStateAndNormalGeometry(1, geometry, geometry), &note, true /*leaveFullScreen*/);
+        EXPECT_EQ(mainWindowOf(restored)["windowState"].toInt(), 0);
+        EXPECT_FALSE(note.isEmpty());
+    }
+
+    //! A save keeps the state as it is
+    const QByteArray minimized = layoutWithStateAndNormalGeometry(1, geometry, geometry);
+    EXPECT_EQ(WindowGeometryCheck::repairNormalGeometry(minimized), minimized);
+}
