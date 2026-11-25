@@ -53,9 +53,11 @@ public:
 
     //! How long after the window is shown every change of its geometry is checked
     static constexpr int STARTUP_WATCH_MS = 5000;
-    //! At most this many corrections by the watch, so a platform that keeps refusing a geometry
-    //! can't make it loop
+    //! At most this many corrections by the watch within WATCH_CORRECTIONS_PERIOD_MS, so a platform
+    //! that keeps refusing a geometry can't make it loop; the count starts again after the period,
+    //! so the minimum-size rule keeps working for the whole run
     static constexpr int MAX_WATCH_CORRECTIONS = 10;
+    static constexpr int WATCH_CORRECTIONS_PERIOD_MS = 5000;
 
     enum class Action {
         None,     // already fully on a screen

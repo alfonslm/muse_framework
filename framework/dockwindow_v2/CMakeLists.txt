@@ -48,6 +48,8 @@ target_sources(muse_dockwindow PRIVATE
     internal/dropcontroller.h
     internal/windowgeometrycheck.cpp
     internal/windowgeometrycheck.h
+    internal/normalgeometrytracker.cpp
+    internal/normalgeometrytracker.h
     )
 
 ###########################################

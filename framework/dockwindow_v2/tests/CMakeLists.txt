@@ -24,6 +24,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/topleveltoolbarslayout_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/dockwindow_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/windowgeometrycheck_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/normalgeometrytracker_tests.cpp
     )
 
 get_property(kddockwidgets_src_dir GLOBAL PROPERTY kddockwidgets_SOURCE_DIR)

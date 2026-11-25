@@ -201,6 +201,7 @@ void WindowPlacement::watch(QWindow* window)
 
     struct State {
         QElapsedTimer sinceStart;
+        QElapsedTimer sincePeriodStart;
         bool pending = false;
         int corrections = 0;
     };
@@ -209,6 +210,11 @@ void WindowPlacement::watch(QWindow* window)
     state->sinceStart.start();
 
     auto scheduleCheck = [window, state]() {
+        if (state->sincePeriodStart.isValid() && state->sincePeriodStart.elapsed() >= WATCH_CORRECTIONS_PERIOD_MS) {
+            state->corrections = 0;
+            state->sincePeriodStart.invalidate();
+        }
+
         if (state->pending || state->corrections >= MAX_WATCH_CORRECTIONS) {
             return;
         }
@@ -223,9 +229,13 @@ void WindowPlacement::watch(QWindow* window)
         QTimer::singleShot(0, window, [window, state]() {
             state->pending = false;
             if (ensureOnScreen(window)) {
+                if (!state->sincePeriodStart.isValid()) {
+                    state->sincePeriodStart.start();
+                }
                 ++state->corrections;
                 if (state->corrections == MAX_WATCH_CORRECTIONS) {
-                    LOGW() << "The main window was moved " << MAX_WATCH_CORRECTIONS << " times; not checking it again";
+                    LOGW() << "The main window was moved " << MAX_WATCH_CORRECTIONS << " times in "
+                           << WATCH_CORRECTIONS_PERIOD_MS << " ms; not checking it again for a while";
                 }
             }
         });
