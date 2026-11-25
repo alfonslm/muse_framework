@@ -64,34 +64,21 @@ public:
     ButtonData buttonData(Button b) const override;
 
     // question
-    [[deprecated("Use question() instead")]]
-    Result questionSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
-                        const Options& options = {}, const std::string& dialogTitle = "") override;
-
     async::Promise<Result> question(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons,
                                     int defBtn = int(Button::NoButton), const Options& options = {},
                                     const std::string& dialogTitle = "") override;
 
     // info
-    Result infoSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
-                    const Options& options = {}, const std::string& dialogTitle = "") override;
-
     async::Promise<Result> info(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons = {},
                                 int defBtn = int(Button::NoButton), const Options& options = {},
                                 const std::string& dialogTitle = "") override;
 
     // warning
-    Result warningSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
-                       const Options& options = {}, const std::string& dialogTitle = "") override;
-
     async::Promise<Result> warning(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons = {},
                                    int defBtn = int(Button::NoButton), const Options& options = {},
                                    const std::string& dialogTitle = "") override;
 
     // error
-    Result errorSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
-                     const Options& options = { WithIcon }, const std::string& dialogTitle = "") override;
-
     async::Promise<Result> error(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons = {},
                                  int defBtn = int(Button::NoButton), const Options& options = { WithIcon },
                                  const std::string& dialogTitle = "") override;
@@ -102,25 +89,21 @@ public:
     // files
     async::Promise<io::path_t> selectOpeningFile(const std::string& title, const io::path_t& dir,
                                                  const std::vector<std::string>& filter) override;
-    io::path_t selectOpeningFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,
-                                     const int options) override;
-    io::paths_t selectOpeningFilesSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,
-                                       const int options) override;
+    async::Promise<io::paths_t> selectOpeningFiles(const std::string& title, const io::path_t& dir,
+                                                   const std::vector<std::string>& filter) override;
     async::Promise<io::path_t> selectSavingFile(const std::string& title, const io::path_t& path, const std::vector<std::string>& filter,
                                                 bool confirmOverwrite = true) override;
-    io::path_t selectSavingFileSync(const std::string& title, const io::path_t& path, const std::vector<std::string>& filter,
-                                    bool confirmOverwrite = true) override;
 
     // dirs
-    io::path_t selectDirectory(const std::string& title, const io::path_t& dir) override;
-    io::paths_t selectMultipleDirectories(const std::string& title, const io::path_t& dir, const io::paths_t& selectedDirectories) override;
+    async::Promise<io::path_t> selectDirectory(const std::string& title, const io::path_t& dir) override;
+    async::Promise<io::paths_t> selectMultipleDirectories(const std::string& title, const io::path_t& dir,
+                                                          const io::paths_t& selectedDirectories) override;
 
     // color
     async::Promise<Color> selectColor(const Color& color = Color::WHITE, const std::string& title = {}, bool allowAlpha = false) override;
     bool isSelectColorOpened() const override;
 
     // custom
-    RetVal<Val> openSync(const UriQuery& uri) override;
     async::Promise<Val> open(const UriQuery& uri) override;
     RetVal<bool> isOpened(const UriQuery& uri) const override;
     RetVal<bool> isOpened(const Uri& uri) const override;
@@ -130,9 +113,7 @@ public:
 
     async::Promise<Ret> close(const UriQuery& uri) override;
     async::Promise<Ret> close(const Uri& uri) override;
-    Ret closeSync(const UriQuery& uri) override;
     async::Promise<Ret> closeAllDialogs() override;
-    Ret closeAllDialogsSync() override;
 
     // state
     ValCh<Uri> currentUri() const override;
@@ -153,6 +134,50 @@ public:
     async::Channel<QVariant> closeRequested() const override { return m_closeRequested; }
     async::Channel<QVariant> raiseRequested() const override { return m_raiseRequested; }
 
+    //! =================================
+    //! NOTE Please don't use this
+    //! =================================
+    [[deprecated("Use question() instead")]]
+    Result questionSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
+                        const Options& options = {}, const std::string& dialogTitle = "") override;
+
+    [[deprecated("Use info() instead")]]
+    Result infoSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
+                    const Options& options = {}, const std::string& dialogTitle = "") override;
+
+    [[deprecated("Use warning() instead")]]
+    Result warningSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
+                       const Options& options = {}, const std::string& dialogTitle = "") override;
+
+    [[deprecated("Use error() instead")]]
+    Result errorSync(const std::string& contentTitle, const Text& text, const ButtonDatas& buttons, int defBtn = int(Button::NoButton),
+                     const Options& options = { WithIcon }, const std::string& dialogTitle = "") override;
+
+    [[deprecated("Use selectOpeningFile() instead")]]
+    io::path_t selectOpeningFileSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,
+                                     const int options) override;
+
+    [[deprecated("Use selectOpeningFiles() instead")]]
+    io::paths_t selectOpeningFilesSync(const std::string& title, const io::path_t& dir, const std::vector<std::string>& filter,
+                                       const int options) override;
+
+    [[deprecated("Use selectSavingFile() instead")]]
+    io::path_t selectSavingFileSync(const std::string& title, const io::path_t& path, const std::vector<std::string>& filter,
+                                    bool confirmOverwrite = true) override;
+
+    [[deprecated("Use selectDirectory() instead")]]
+    io::path_t selectDirectorySync(const std::string& title, const io::path_t& dir) override;
+
+    [[deprecated("Use selectMultipleDirectories() instead")]]
+    io::paths_t selectMultipleDirectoriesSync(const std::string& title, const io::path_t& dir,
+                                              const io::paths_t& selectedDirectories) override;
+
+    [[deprecated("Use open() instead")]]
+    RetVal<Val> openSync(const UriQuery& uri) override;
+
+    [[deprecated("Use closeAllDialogs() instead")]]
+    Ret closeAllDialogsSync() override;
+
 private:
     struct OpenData {
         QString objectId;
@@ -168,6 +193,7 @@ private:
 
     async::Promise<Val> openAsync(const UriQuery& uri);
     async::Promise<Val> openAsync(const Uri& uri, const QVariantMap& params);
+    async::Promise<Val> doOpenAsync(const async::Promise<Val>::BodyResolveReject& open);
 
     async::Promise<Val>::BodyResolveReject openFunc(const UriQuery& q);
     async::Promise<Val>::BodyResolveReject openFunc(const UriQuery& q, const QVariantMap& params);
