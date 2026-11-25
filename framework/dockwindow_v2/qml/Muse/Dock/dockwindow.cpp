@@ -572,13 +572,15 @@ void DockWindow::trackNormalGeometry()
         return !(window->windowStates() & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized));
     };
 
-    const auto screenGeometries = []() {
-        QList<QRect> result;
+    const auto screens = []() {
+        QList<NormalGeometryTracker::Screen> result;
         for (const QScreen* screen : QGuiApplication::screens()) {
-            result.push_back(screen->geometry());
+            result.push_back({ screen->geometry(), screen->availableGeometry() });
         }
         return result;
     };
+
+    //! Everything here runs on the GUI thread: the window's signals and the settle timer
 
     m_normalGeometrySettleTimer.setSingleShot(true);
     m_normalGeometrySettleTimer.setInterval(NormalGeometryTracker::SETTLE_MS);
@@ -586,8 +588,8 @@ void DockWindow::trackNormalGeometry()
         m_normalGeometryTracker.commit(isNormalState());
     });
 
-    const auto onGeometryChanged = [this, window, isNormalState, screenGeometries]() {
-        if (m_normalGeometryTracker.onGeometryChanged(window->geometry(), isNormalState(), screenGeometries())) {
+    const auto onGeometryChanged = [this, window, isNormalState, screens]() {
+        if (m_normalGeometryTracker.onGeometryChanged(window->geometry(), window->frameGeometry(), isNormalState(), screens())) {
             m_normalGeometrySettleTimer.start();
         }
     };
@@ -603,7 +605,7 @@ void DockWindow::trackNormalGeometry()
         }
     });
 
-    m_normalGeometryTracker.seed(window->geometry(), isNormalState(), screenGeometries());
+    m_normalGeometryTracker.seed(window->geometry(), window->frameGeometry(), isNormalState(), screens());
 }
 
 void DockWindow::restoreGeometry()

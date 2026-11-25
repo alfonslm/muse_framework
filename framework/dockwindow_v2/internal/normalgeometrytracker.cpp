@@ -21,19 +21,34 @@
 
 #include "normalgeometrytracker.h"
 
+#include <cstdlib>
+
 #include "windowgeometrycheck.h"
 
 using namespace muse::dock;
 
-bool NormalGeometryTracker::isUsable(const QRect& geometry, const QList<QRect>& screenGeometries)
+namespace {
+bool isWithin(int a, int b, int tolerance)
+{
+    return std::abs(a - b) <= tolerance;
+}
+
+bool fills(const QRect& frame, const QRect& area, int tolerance)
+{
+    return isWithin(frame.left(), area.left(), tolerance) && isWithin(frame.top(), area.top(), tolerance)
+           && isWithin(frame.right(), area.right(), tolerance) && isWithin(frame.bottom(), area.bottom(), tolerance);
+}
+}
+
+bool NormalGeometryTracker::isUsable(const QRect& geometry, const QRect& frameGeometry, const QList<Screen>& screens)
 {
     if (geometry.width() < WindowGeometryCheck::MIN_WIDTH || geometry.height() < WindowGeometryCheck::MIN_HEIGHT) {
         return false;
     }
 
-    //! A window covering a whole screen is full screen (or on its way there), not a normal window
-    for (const QRect& screen : screenGeometries) {
-        if (geometry.contains(screen)) {
+    for (const Screen& screen : screens) {
+        //! Full screen (or on its way there), or zoomed: not the size the user gave the window
+        if (frameGeometry.contains(screen.geometry) || fills(frameGeometry, screen.availableGeometry, ZOOM_TOLERANCE)) {
             return false;
         }
     }
@@ -41,17 +56,18 @@ bool NormalGeometryTracker::isUsable(const QRect& geometry, const QList<QRect>& 
     return true;
 }
 
-void NormalGeometryTracker::seed(const QRect& geometry, bool normalState, const QList<QRect>& screenGeometries)
+void NormalGeometryTracker::seed(const QRect& geometry, const QRect& frameGeometry, bool normalState, const QList<Screen>& screens)
 {
-    if (normalState && isUsable(geometry, screenGeometries)) {
+    if (normalState && isUsable(geometry, frameGeometry, screens)) {
         m_committed = geometry;
     }
     m_candidate = QRect();
 }
 
-bool NormalGeometryTracker::onGeometryChanged(const QRect& geometry, bool normalState, const QList<QRect>& screenGeometries)
+bool NormalGeometryTracker::onGeometryChanged(const QRect& geometry, const QRect& frameGeometry, bool normalState,
+                                              const QList<Screen>& screens)
 {
-    if (!normalState || !isUsable(geometry, screenGeometries)) {
+    if (!normalState || !isUsable(geometry, frameGeometry, screens)) {
         return false;
     }
 

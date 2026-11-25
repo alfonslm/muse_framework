@@ -34,18 +34,31 @@ namespace muse::dock {
 //!
 //! A geometry change in the normal state becomes a candidate, and is committed when the window has
 //! settled (the caller's timer, SETTLE_MS). Entering zoom or full screen drops a candidate, so the
-//! frames of the transition are not taken. A geometry that covers a whole screen is never taken.
+//! frames of the transition are not taken. A geometry that covers a whole screen, or fills a
+//! screen's available area (zoomed), is never taken.
 //! Pure: geometry in, geometry out, for tests.
 class NormalGeometryTracker
 {
 public:
     static constexpr int SETTLE_MS = 300;
 
+    //! A window whose frame is within this many pixels of a screen's available geometry on every
+    //! edge counts as zoomed: on macOS a zoomed window can be reported in the normal state
+    static constexpr int ZOOM_TOLERANCE = 8;
+
+    struct Screen {
+        QRect geometry;          // the whole screen
+        QRect availableGeometry; // without the menu bar, the Dock or a task bar
+    };
+
+    //! \p geometry is the window's geometry without its frame (what is saved and restored),
+    //! \p frameGeometry with it (what is compared with the screens)
+
     //! The first geometry, e.g. right after a layout is restored: committed at once if it is usable
-    void seed(const QRect& geometry, bool normalState, const QList<QRect>& screenGeometries);
+    void seed(const QRect& geometry, const QRect& frameGeometry, bool normalState, const QList<Screen>& screens);
 
     //! Returns whether the geometry was taken as a candidate (then start the settle timer)
-    bool onGeometryChanged(const QRect& geometry, bool normalState, const QList<QRect>& screenGeometries);
+    bool onGeometryChanged(const QRect& geometry, const QRect& frameGeometry, bool normalState, const QList<Screen>& screens);
 
     void onStateChanged(bool normalState);
 
@@ -56,7 +69,7 @@ public:
     QRect normalGeometry() const;
 
 private:
-    static bool isUsable(const QRect& geometry, const QList<QRect>& screenGeometries);
+    static bool isUsable(const QRect& geometry, const QRect& frameGeometry, const QList<Screen>& screens);
 
     QRect m_committed;
     QRect m_candidate;
