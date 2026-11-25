@@ -74,7 +74,7 @@ const std::unordered_map<std::string, ArticulationType> CANONICAL_NAMES {
 #undef AT_NAME
 
 //! NOTE Lower-case names Keyswitch Creator sets use in articulationKeyMap/techniqueKeyMap,
-//! accepted so Alfons's existing sets carry over without a full rewrite. Only the simple,
+//! accepted so a user's existing keyswitch sets carry over without a full rewrite. Only the simple,
 //! single-technique names are aliased -- compound/vendor-specific keyswitch labels
 //! (e.g. "soft accent-staccato") aren't real notation articulations and aren't aliased.
 const std::unordered_map<std::string, ArticulationType> LOWERCASE_ALIASES {
