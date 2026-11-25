@@ -580,6 +580,7 @@ void DockWindow::trackNormalGeometry()
 {
     QPointer<QQuickWindow> window = this->window();
     if (!window) {
+        LOGW() << "No main window: its normal geometry is not tracked";
         return;
     }
 
@@ -630,8 +631,9 @@ void DockWindow::trackNormalGeometry()
         }
     });
 
-    //! Once shown, the frame is known: the seed is checked again (e.g. a zoomed window that the
-    //! check before showing could not tell apart)
+    //! Once shown, the seed is checked again: by then the platform usually reports the frame, which
+    //! it does not before (on some platforms only a little later), e.g. for a zoomed window that
+    //! the check before showing could not tell apart
     auto reseed = std::make_shared<QMetaObject::Connection>();
     *reseed = connect(window, &QWindow::visibleChanged, this, [this, window, isNormalState, screens, reseed](bool visible) {
         if (!visible || !window) {

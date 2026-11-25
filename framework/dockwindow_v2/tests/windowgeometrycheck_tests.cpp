@@ -313,13 +313,14 @@ TEST(Dock_WindowGeometryCheckTests, MainWindowState_ReadsTheFirstMainWindow)
 
 TEST(Dock_WindowGeometryCheckTests, RestoreOfMinimized_ComesBackNotMinimized)
 {
-    //! Restored minimized, the app would start with no window on the screen (on macOS: only in the Dock)
+    //! Restored minimized, the app would start with no window on the screen (on macOS: only in the Dock).
+    //! The library writes the minimized state alone (1), also for a window minimized from zoomed
     const QRect geometry(100, 80, 1200, 750);
-    for (int state : { 1, 1 | 2 }) {
+    {
         QString note;
         const QByteArray restored = WindowGeometryCheck::repairNormalGeometry(
-            layoutWithStateAndNormalGeometry(state, geometry, geometry), &note, true /*leaveFullScreen*/);
-        EXPECT_EQ(mainWindowOf(restored)["windowState"].toInt(), state & ~1);
+            layoutWithStateAndNormalGeometry(1, geometry, geometry), &note, true /*leaveFullScreen*/);
+        EXPECT_EQ(mainWindowOf(restored)["windowState"].toInt(), 0);
         EXPECT_FALSE(note.isEmpty());
     }
 

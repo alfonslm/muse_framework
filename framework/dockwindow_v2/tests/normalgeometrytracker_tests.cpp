@@ -237,3 +237,17 @@ TEST(Dock_NormalGeometryTrackerTests, ZoomedBeforeShow_NotTakenAsSeed)
     noRestored.seed(tall, tall, true, SCREENS);
     EXPECT_EQ(noRestored.normalGeometry(), tall);
 }
+
+TEST(Dock_NormalGeometryTrackerTests, FullScreenBelowANotch_NotTaken)
+{
+    //! A MacBook display with a notch: in full screen the frame starts below the notch, and with
+    //! the Dock visible it does not fill the available area either
+    const QList<Screen> notched { { QRect(0, 0, 1512, 982), QRect(0, 38, 1512, 870) } };
+    const QRect frame(0, 38, 1512, 944);
+
+    NormalGeometryTracker tracker;
+    tracker.seed(NORMAL, frameOf(NORMAL), true, notched);
+    EXPECT_EQ(tracker.onGeometryChanged(frame, frame, true, notched), NormalGeometryTracker::Change::Rejected);
+    tracker.commit(true);
+    EXPECT_EQ(tracker.normalGeometry(), NORMAL);
+}

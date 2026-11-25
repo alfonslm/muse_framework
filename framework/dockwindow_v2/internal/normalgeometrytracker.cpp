@@ -58,9 +58,16 @@ bool NormalGeometryTracker::isUsable(const QRect& geometry, const QRect& frameGe
         return false;
     }
 
-    //! Full screen (or on its way there), or zoomed: not the size the user gave the window
+    //! Full screen (or on its way there), or zoomed: not the size the user gave the window. On a
+    //! display with a notch a full-screen frame starts below the notch, so a frame spanning the
+    //! screen's whole width down to its bottom edge counts as full screen, whatever its top.
     for (const Screen& screen : screens) {
-        if (frameGeometry.contains(screen.geometry)) {
+        const QRect& whole = screen.geometry;
+        if (frameGeometry.contains(whole)) {
+            return false;
+        }
+        if (isWithin(frameGeometry.left(), whole.left(), ZOOM_TOLERANCE) && isWithin(frameGeometry.right(), whole.right(), ZOOM_TOLERANCE)
+            && isWithin(frameGeometry.bottom(), whole.bottom(), ZOOM_TOLERANCE)) {
             return false;
         }
     }
