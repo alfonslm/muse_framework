@@ -41,6 +41,12 @@ AudioSignalChanges SignalNode::audioSignalChanges() const
 void SignalNode::onOutputSpecChanged(const OutputSpec& spec)
 {
     m_channelPeaks.resize(spec.audioChannelCount, 0.f);
+
+    //! FontDaw: a channel starts silent, so the first level is reported as a rise
+    //! (the map's default pressure, 0 dBFS, would swallow a first level just below it)
+    for (audioch_t ch = 0; ch < spec.audioChannelCount; ++ch) {
+        m_signalValuesMap.try_emplace(ch, AudioSignalVal { MINIMUM_OPERABLE_DBFS_LEVEL });
+    }
 }
 
 void SignalNode::doSelfProcess(float* buffer, samples_t samplesPerChannel)
@@ -85,7 +91,10 @@ void SignalNode::updateSignalValue(const audioch_t ch, const float newPeak)
         return;
     }
 
-    if (std::abs(signalVal.pressure - newPressure) < PRESSURE_MINIMAL_VALUABLE_DIFF) {
+    //! FontDaw: a rise is reported at once, however small, so a meter never reads low;
+    //! only falls smaller than the threshold are skipped, to keep the number of updates down
+    const bool isRise = newPressure > signalVal.pressure;
+    if (!isRise && std::abs(signalVal.pressure - newPressure) < PRESSURE_MINIMAL_VALUABLE_DIFF) {
         return;
     }
 
